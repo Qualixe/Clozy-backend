@@ -17,9 +17,16 @@ class CategoryController extends Controller
         return response()->json($categories->map(fn (Category $c) => $this->summarize($c))->values());
     }
 
+    /**
+     * Looked up by slug (the public collection URL); falls back to the
+     * numeric id too, so old-style links keep working.
+     */
     public function show(string $id): JsonResponse
     {
-        $category = Category::withCount('products')->find($id);
+        $category = Category::withCount('products')
+            ->where('slug', $id)
+            ->orWhere('id', $id)
+            ->first();
 
         if (! $category) {
             return response()->json(['message' => 'Category not found'], 404);
