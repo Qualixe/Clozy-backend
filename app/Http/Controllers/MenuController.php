@@ -34,6 +34,18 @@ class MenuController extends Controller
         return response()->json($this->detail($menu));
     }
 
+    /** Public lookup used by the storefront to render a menu by its handle (e.g. "main-menu"). */
+    public function showByHandle(string $handle): JsonResponse
+    {
+        $menu = Menu::with('items.children.children')->where('handle', $handle)->first();
+
+        if (! $menu) {
+            return response()->json(['message' => 'Menu not found'], 404);
+        }
+
+        return response()->json($this->detail($menu));
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -62,10 +74,20 @@ class MenuController extends Controller
             'items.*.label' => ['required', 'string', 'max:255'],
             'items.*.type' => ['required', 'in:custom,collection'],
             'items.*.url' => ['required', 'string', 'max:2048'],
+            'items.*.displayStyle' => ['nullable', 'in:link,dropdown,megamenu'],
             'items.*.children' => ['array'],
             'items.*.children.*.label' => ['required', 'string', 'max:255'],
             'items.*.children.*.type' => ['required', 'in:custom,collection'],
-            'items.*.children.*.url' => ['required', 'string', 'max:2048'],
+            // Not required: when this item is a megamenu column group (has
+            // its own children below), it's a label/icon header, not a link.
+            'items.*.children.*.url' => ['nullable', 'string', 'max:2048'],
+            // A megamenu's children are column groups — icon key, plus their
+            // own leaf-link children (the third nesting level).
+            'items.*.children.*.icon' => ['nullable', 'string', 'max:255'],
+            'items.*.children.*.children' => ['array'],
+            'items.*.children.*.children.*.label' => ['required', 'string', 'max:255'],
+            'items.*.children.*.children.*.type' => ['required', 'in:custom,collection'],
+            'items.*.children.*.children.*.url' => ['required', 'string', 'max:2048'],
         ]);
 
         DB::transaction(function () use ($menu, $validated) {
@@ -109,7 +131,9 @@ class MenuController extends Controller
             'parent_id' => $parentId,
             'label' => $item['label'],
             'type' => $item['type'],
-            'url' => $item['url'],
+            'url' => $item['url'] ?? '',
+            'display_style' => $item['displayStyle'] ?? 'link',
+            'icon' => $item['icon'] ?? null,
             'position' => $position,
         ]);
 
@@ -154,6 +178,8 @@ class MenuController extends Controller
             'label' => $item->label,
             'type' => $item->type,
             'url' => $item->url,
+            'displayStyle' => $item->display_style,
+            'icon' => $item->icon,
             'children' => $item->children->map(fn (MenuItem $child) => $this->itemNode($child))->values(),
         ];
     }
