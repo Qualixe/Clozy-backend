@@ -24,7 +24,13 @@ class ProductController extends Controller
             ->when($request->query('category'), function ($query, $category) {
                 $query->whereHas('category', fn ($q) => $q->where('slug', $category));
             })
+            ->when($request->query('search'), function ($query, $search) {
+                $query->where('title', 'like', '%'.$search.'%');
+            })
             ->orderBy('id')
+            ->when($request->query('limit'), function ($query, $limit) {
+                $query->limit((int) $limit);
+            })
             ->get();
 
         return response()->json($products->map(fn (Product $p) => $this->summarize($p))->values());
