@@ -22,6 +22,18 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
+        // Dashboard staff accounts. updateOrCreate keeps this seeder safe to
+        // re-run without failing on duplicate emails.
+        User::updateOrCreate(
+            ['email' => 'admin@clozy.com'],
+            ['name' => 'Admin', 'password' => 'password123', 'role' => 'admin']
+        );
+
+        User::updateOrCreate(
+            ['email' => 'editor@clozy.com'],
+            ['name' => 'Test Editor', 'password' => 'password123', 'role' => 'editor']
+        );
+
         $this->call(ProductSeeder::class);
     }
 }
