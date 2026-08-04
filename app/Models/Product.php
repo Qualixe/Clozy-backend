@@ -35,6 +35,15 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * Secondary collection memberships, additive to `category` — a product
+     * can be listed under any number of these, Shopify-style.
+     */
+    public function collections(): BelongsToMany
+    {
+        return $this->belongsToMany(Category::class);
+    }
+
     public function tags(): BelongsToMany
     {
         return $this->belongsToMany(Tag::class);

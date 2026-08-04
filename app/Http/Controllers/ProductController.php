@@ -22,7 +22,12 @@ class ProductController extends Controller
             ->withAvg('reviews', 'rating')
             ->withCount('reviews')
             ->when($request->query('category'), function ($query, $category) {
-                $query->whereHas('category', fn ($q) => $q->where('slug', $category));
+                // A product shows up on a collection page if it's either the
+                // primary category or one of the additional collections.
+                $query->where(function ($q) use ($category) {
+                    $q->whereHas('category', fn ($qq) => $qq->where('slug', $category))
+                        ->orWhereHas('collections', fn ($qq) => $qq->where('slug', $category));
+                });
             })
             ->when($request->query('search'), function ($query, $search) {
                 $query->where('title', 'like', '%'.$search.'%');
@@ -123,6 +128,7 @@ class ProductController extends Controller
         $product = Product::query()
             ->with([
                 'category',
+                'collections',
                 'tags',
                 'images',
                 'metafields',
@@ -171,6 +177,7 @@ class ProductController extends Controller
             ]);
 
             $this->syncTags($product, $validated['tags'] ?? []);
+            $product->collections()->sync($validated['collections'] ?? []);
             $this->createImages($product, $validated['images'] ?? []);
             $this->createMetafields($product, $validated['metafields'] ?? []);
 
@@ -185,7 +192,7 @@ class ProductController extends Controller
             return $product;
         });
 
-        $product->load(['category', 'tags', 'images', 'variants']);
+        $product->load(['category', 'collections', 'tags', 'images', 'variants']);
 
         return response()->json($this->summarize($product), 201);
     }
@@ -232,6 +239,7 @@ class ProductController extends Controller
             // always submits its complete current state.
             $product->tags()->detach();
             $this->syncTags($product, $validated['tags'] ?? []);
+            $product->collections()->sync($validated['collections'] ?? []);
 
             $product->images()->delete();
             $this->createImages($product, $validated['images'] ?? []);
@@ -251,7 +259,7 @@ class ProductController extends Controller
             }
         });
 
-        $product->load(['category', 'tags', 'images', 'variants']);
+        $product->load(['category', 'collections', 'tags', 'images', 'variants']);
 
         return response()->json($this->summarize($product));
     }
@@ -282,6 +290,8 @@ class ProductController extends Controller
             'tags' => ['array'],
             'tags.*' => ['string'],
             'category' => ['nullable', 'string', 'max:255'],
+            'collections' => ['array'],
+            'collections.*' => ['integer', 'exists:categories,id'],
             'metafields' => ['array'],
             'metafields.*.key' => ['nullable', 'string', 'max:255'],
             'metafields.*.value' => ['nullable', 'string'],
@@ -447,6 +457,7 @@ class ProductController extends Controller
             'stock' => $product->stock,
             'sku' => $product->sku,
             'category' => $product->category?->name,
+            'collections' => $product->collections->pluck('id')->map(fn ($id) => (string) $id)->values(),
             'tags' => $product->tags->pluck('name')->values(),
             'metafields' => $product->metafields
                 ->map(fn ($m) => ['key' => $m->key, 'value' => $m->value])
