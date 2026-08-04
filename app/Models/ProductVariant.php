@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ProductVariant extends Model
 {
-    protected $fillable = ['product_id', 'sku', 'price', 'compare_at_price', 'stock'];
+    protected $fillable = ['product_id', 'sku', 'price', 'compare_at_price', 'stock', 'image'];
 
     protected $casts = [
         'price' => 'decimal:2',

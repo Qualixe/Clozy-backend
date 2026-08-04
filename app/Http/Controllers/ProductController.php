@@ -81,6 +81,13 @@ class ProductController extends Controller
         $sizeOption = $product->options->firstWhere('name', 'Size');
         $careDetails = $product->metafields->firstWhere('key', 'care_details');
 
+        $images = $product->images->pluck('url')->values();
+        foreach ($product->variants as $variant) {
+            if ($variant->image && ! $images->contains($variant->image)) {
+                $images->push($variant->image);
+            }
+        }
+
         return response()->json([
             ...$this->summarize($product),
             'description' => $product->description,
@@ -88,11 +95,12 @@ class ProductController extends Controller
                 ? $colorOption->values->map(fn ($v) => [
                     'name' => $v->value,
                     'value' => $v->swatch,
+                    'image' => $this->variantImageForOptionValue($product, $v->id),
                 ])->values()
                 : [],
             'sizes' => $sizeOption ? $sizeOption->values->pluck('value')->values() : [],
             'outOfStockSizes' => $this->outOfStockSizes($product, $sizeOption),
-            'images' => $product->images->pluck('url')->values(),
+            'images' => $images->values(),
             'details' => $careDetails ? json_decode($careDetails->value) : [],
             'reviewsList' => $product->reviews->map(fn ($r) => [
                 'id' => (string) $r->id,
@@ -291,6 +299,7 @@ class ProductController extends Controller
             'variants.*.price' => ['nullable'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.stock' => ['nullable'],
+            'variants.*.image' => ['nullable', 'string', 'max:2048'],
         ];
     }
 
@@ -407,6 +416,7 @@ class ProductController extends Controller
                 'sku' => ($variantData['sku'] ?? '') !== '' ? $variantData['sku'] : null,
                 'price' => ($variantData['price'] ?? '') !== '' ? (float) $variantData['price'] : null,
                 'stock' => ($variantData['stock'] ?? '') !== '' ? (int) $variantData['stock'] : 0,
+                'image' => ($variantData['image'] ?? '') !== '' ? $variantData['image'] : null,
             ]);
 
             $valueIds = [];
@@ -456,6 +466,7 @@ class ProductController extends Controller
                 'price' => $variant->price !== null ? (string) $variant->price : '',
                 'sku' => $variant->sku ?? '',
                 'stock' => (string) $variant->stock,
+                'image' => $variant->image ?? '',
             ])->values(),
         ];
     }
@@ -509,6 +520,20 @@ class ProductController extends Controller
             $slugs->contains('new') => 'New',
             default => null,
         };
+    }
+
+    /**
+     * The image to show in the gallery when a given color swatch is
+     * selected — the first variant carrying that color value (across
+     * whatever size it's paired with) that has an image assigned.
+     */
+    private function variantImageForOptionValue(Product $product, int $optionValueId): ?string
+    {
+        $variant = $product->variants->first(
+            fn ($variant) => $variant->image && $variant->optionValues->contains('id', $optionValueId)
+        );
+
+        return $variant?->image;
     }
 
     /**
