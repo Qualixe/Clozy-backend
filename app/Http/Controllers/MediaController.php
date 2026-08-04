@@ -6,6 +6,7 @@ use App\Models\Media;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MediaController extends Controller
 {
@@ -14,6 +15,22 @@ class MediaController extends Controller
         $media = Media::orderByDesc('created_at')->get();
 
         return response()->json($media->map(fn (Media $m) => $this->summarize($m))->values());
+    }
+
+    /**
+     * Streams an uploaded file straight from storage — used instead of the
+     * `public/storage` symlink, which `php artisan serve` can fail to
+     * traverse on Windows (permission-denied even though the link exists).
+     */
+    public function serve(string $filename): StreamedResponse
+    {
+        $path = 'media/'.basename($filename);
+
+        if (! Storage::disk('public')->exists($path)) {
+            abort(404);
+        }
+
+        return Storage::disk('public')->response($path);
     }
 
     public function store(Request $request): JsonResponse

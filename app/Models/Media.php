@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class Media extends Model
 {
@@ -14,8 +13,12 @@ class Media extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
+    /**
+     * Served through the `/media/file/{filename}` route rather than the
+     * `public/storage` symlink — see MediaController::serve() for why.
+     */
     public function getUrlAttribute(): string
     {
-        return Storage::disk('public')->url($this->path);
+        return url('/api/media/file/'.basename($this->path));
     }
 }

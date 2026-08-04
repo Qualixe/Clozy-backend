@@ -41,6 +41,10 @@ Route::get('/categories/{slug}', [CategoryController::class, 'show']);
 
 Route::get('/menus/handle/{handle}', [MenuController::class, 'showByHandle']);
 
+// Uploaded images — public so they render on the storefront for anonymous
+// visitors (product/category photos), same as any other static asset.
+Route::get('/media/file/{filename}', [MediaController::class, 'serve']);
+
 Route::post('/orders', [OrderController::class, 'store']);
 
 // ---------------------------------------------------------------------------
