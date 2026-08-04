@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
@@ -65,6 +66,10 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::get('/menus/{id}', [MenuController::class, 'show']);
     Route::put('/menus/{id}', [MenuController::class, 'update']);
     Route::delete('/menus/{id}', [MenuController::class, 'destroy']);
+
+    Route::get('/media', [MediaController::class, 'index']);
+    Route::post('/media', [MediaController::class, 'store']);
+    Route::delete('/media/{id}', [MediaController::class, 'destroy']);
 });
 
 // ---------------------------------------------------------------------------
