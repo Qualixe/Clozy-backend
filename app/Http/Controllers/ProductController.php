@@ -52,7 +52,7 @@ class ProductController extends Controller
                 'category',
                 'tags',
                 'images',
-                'variants.optionValues',
+                'variants.optionValues.option',
                 'options.values',
                 'metafields',
                 'reviews' => fn ($query) => $query->orderByDesc('reviewed_at'),
@@ -105,6 +105,17 @@ class ProductController extends Controller
                 : [],
             'sizes' => $sizeOption ? $sizeOption->values->pluck('value')->values() : [],
             'outOfStockSizes' => $this->outOfStockSizes($product, $sizeOption),
+            // Lets the storefront show the exact price/compare-at price for
+            // whichever color+size combination is currently selected.
+            'variants' => $product->variants->map(fn ($variant) => [
+                'optionValues' => $variant->optionValues
+                    ->mapWithKeys(fn ($ov) => [$ov->option->name => $ov->value])
+                    ->all(),
+                'price' => (float) ($variant->price ?? $product->price ?? 0),
+                'compareAtPrice' => $variant->compare_at_price !== null
+                    ? (float) $variant->compare_at_price
+                    : null,
+            ])->values(),
             'images' => $images->values(),
             'details' => $careDetails ? json_decode($careDetails->value) : [],
             'reviewsList' => $product->reviews->map(fn ($r) => [
@@ -171,6 +182,8 @@ class ProductController extends Controller
                 'description' => $validated['description'] ?? null,
                 'sku' => $hasVariants ? null : ($validated['sku'] ?? null),
                 'stock' => $hasVariants ? null : $this->toNullableInt($validated['stock'] ?? null),
+                'price' => $hasVariants ? null : $this->toNullableFloat($validated['price'] ?? null),
+                'compare_at_price' => $hasVariants ? null : $this->toNullableFloat($validated['compareAtPrice'] ?? null),
                 'has_variants' => $hasVariants,
                 'seo_title' => $validated['seoTitle'] ?? null,
                 'seo_description' => $validated['seoDescription'] ?? null,
@@ -229,6 +242,8 @@ class ProductController extends Controller
                 'description' => $validated['description'] ?? null,
                 'sku' => $hasVariants ? null : ($validated['sku'] ?? null),
                 'stock' => $hasVariants ? null : $this->toNullableInt($validated['stock'] ?? null),
+                'price' => $hasVariants ? null : $this->toNullableFloat($validated['price'] ?? null),
+                'compare_at_price' => $hasVariants ? null : $this->toNullableFloat($validated['compareAtPrice'] ?? null),
                 'has_variants' => $hasVariants,
                 'seo_title' => $validated['seoTitle'] ?? null,
                 'seo_description' => $validated['seoDescription'] ?? null,
@@ -287,6 +302,8 @@ class ProductController extends Controller
             'description' => ['nullable', 'string'],
             'stock' => ['nullable'],
             'sku' => ['nullable', 'string', 'max:100'],
+            'price' => ['nullable', 'numeric', 'min:0'],
+            'compareAtPrice' => ['nullable', 'numeric', 'min:0'],
             'tags' => ['array'],
             'tags.*' => ['string'],
             'category' => ['nullable', 'string', 'max:255'],
@@ -307,6 +324,7 @@ class ProductController extends Controller
             'variants' => ['array'],
             'variants.*.optionValues' => ['array'],
             'variants.*.price' => ['nullable'],
+            'variants.*.compareAtPrice' => ['nullable'],
             'variants.*.sku' => ['nullable', 'string', 'max:100'],
             'variants.*.stock' => ['nullable'],
             'variants.*.image' => ['nullable', 'string', 'max:2048'],
@@ -329,6 +347,11 @@ class ProductController extends Controller
         }
 
         return $slug;
+    }
+
+    private function toNullableFloat(mixed $value): ?float
+    {
+        return $value !== null && $value !== '' ? (float) $value : null;
     }
 
     private function toNullableInt(mixed $value): ?int
@@ -425,6 +448,9 @@ class ProductController extends Controller
                 'product_id' => $product->id,
                 'sku' => ($variantData['sku'] ?? '') !== '' ? $variantData['sku'] : null,
                 'price' => ($variantData['price'] ?? '') !== '' ? (float) $variantData['price'] : null,
+                'compare_at_price' => ($variantData['compareAtPrice'] ?? '') !== ''
+                    ? (float) $variantData['compareAtPrice']
+                    : null,
                 'stock' => ($variantData['stock'] ?? '') !== '' ? (int) $variantData['stock'] : 0,
                 'image' => ($variantData['image'] ?? '') !== '' ? $variantData['image'] : null,
             ]);
@@ -456,6 +482,8 @@ class ProductController extends Controller
             'description' => $product->description,
             'stock' => $product->stock,
             'sku' => $product->sku,
+            'price' => $product->price !== null ? (string) $product->price : '',
+            'compareAtPrice' => $product->compare_at_price !== null ? (string) $product->compare_at_price : '',
             'category' => $product->category?->name,
             'collections' => $product->collections->pluck('id')->map(fn ($id) => (string) $id)->values(),
             'tags' => $product->tags->pluck('name')->values(),
@@ -475,6 +503,7 @@ class ProductController extends Controller
                     ->mapWithKeys(fn ($ov) => [$ov->option->name => $ov->value])
                     ->all(),
                 'price' => $variant->price !== null ? (string) $variant->price : '',
+                'compareAtPrice' => $variant->compare_at_price !== null ? (string) $variant->compare_at_price : '',
                 'sku' => $variant->sku ?? '',
                 'stock' => (string) $variant->stock,
                 'image' => $variant->image ?? '',
