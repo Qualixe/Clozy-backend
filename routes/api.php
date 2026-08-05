@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\HeroSlideController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\OrderController;
@@ -41,6 +42,8 @@ Route::get('/categories/{slug}', [CategoryController::class, 'show']);
 
 Route::get('/menus/handle/{handle}', [MenuController::class, 'showByHandle']);
 
+Route::get('/hero-slides', [HeroSlideController::class, 'index']);
+
 // Uploaded images — public so they render on the storefront for anonymous
 // visitors (product/category photos), same as any other static asset.
 Route::get('/media/file/{filename}', [MediaController::class, 'serve']);
@@ -74,6 +77,8 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::get('/media', [MediaController::class, 'index']);
     Route::post('/media', [MediaController::class, 'store']);
     Route::delete('/media/{id}', [MediaController::class, 'destroy']);
+
+    Route::put('/hero-slides', [HeroSlideController::class, 'update']);
 });
 
 // ---------------------------------------------------------------------------
