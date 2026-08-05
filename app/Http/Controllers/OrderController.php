@@ -35,13 +35,15 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:32'],
-            'email' => ['required', 'email', 'max:255'],
-            'address' => ['required', 'string'],
-            'district' => ['required', 'string', 'max:255'],
-            'paymentMethod' => ['required', 'in:cod,bkash'],
+            // Nullable: a dashboard-created walk-in/POS sale has no shipping
+            // address or necessarily a phone/email, unlike storefront checkout.
+            'phone' => ['nullable', 'string', 'max:32'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'address' => ['nullable', 'string'],
+            'district' => ['nullable', 'string', 'max:255'],
+            'paymentMethod' => ['required', 'in:cod,bkash,cash'],
             'bkashNumber' => ['nullable', 'string', 'max:32'],
-            'shippingCost' => ['required', 'numeric', 'min:0'],
+            'shippingCost' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.productId' => ['nullable'],
             'items.*.name' => ['required', 'string'],
@@ -54,15 +56,15 @@ class OrderController extends Controller
         $order = DB::transaction(function () use ($validated) {
             $subtotal = collect($validated['items'])
                 ->sum(fn ($item) => $item['price'] * $item['qty']);
-            $shipping = (float) $validated['shippingCost'];
+            $shipping = (float) ($validated['shippingCost'] ?? 0);
 
             $order = Order::create([
                 'order_number' => $this->nextOrderNumber(),
                 'customer_name' => $validated['name'],
-                'customer_email' => $validated['email'],
-                'customer_phone' => $validated['phone'],
-                'address' => $validated['address'],
-                'district' => $validated['district'],
+                'customer_email' => $validated['email'] ?? null,
+                'customer_phone' => $validated['phone'] ?? null,
+                'address' => $validated['address'] ?? null,
+                'district' => $validated['district'] ?? null,
                 'subtotal' => $subtotal,
                 'shipping_cost' => $shipping,
                 'total' => $subtotal + $shipping,
@@ -127,7 +129,11 @@ class OrderController extends Controller
             'customer' => $order->customer_name,
             'email' => $order->customer_email,
             'status' => ucfirst($order->status),
-            'payment' => $order->payment_method === 'bkash' ? 'bKash' : 'COD',
+            'payment' => match ($order->payment_method) {
+                'bkash' => 'bKash',
+                'cash' => 'Cash',
+                default => 'COD',
+            },
             'total' => (float) $order->total,
             'date' => $order->created_at->format('Y-m-d'),
         ];
