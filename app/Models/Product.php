@@ -69,7 +69,14 @@ class Product extends Model
         return $this->hasMany(ProductVariant::class);
     }
 
+    /** Approved reviews only — what the storefront (ratings, review list) shows. */
     public function reviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class)->where('status', 'approved');
+    }
+
+    /** Every review regardless of status — used by the dashboard's moderation queue. */
+    public function allReviews(): HasMany
     {
         return $this->hasMany(ProductReview::class);
     }

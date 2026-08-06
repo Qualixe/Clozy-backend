@@ -118,6 +118,12 @@ class ProductController extends Controller
             ])->values(),
             'images' => $images->values(),
             'details' => $careDetails ? json_decode($careDetails->value) : [],
+            // Every other metafield is a rich-text content block the admin
+            // places above or below the Add to Cart button — unlike
+            // Shopify, this storefront has no per-theme metafield wiring,
+            // so whatever's added here just shows up where it's placed.
+            'contentBlocksBeforeBuyButton' => $this->metafieldContentBlocks($product, 'before_buy_button'),
+            'contentBlocksAfterBuyButton' => $this->metafieldContentBlocks($product, 'after_buy_button'),
             'reviewsList' => $product->reviews->map(fn ($r) => [
                 'id' => (string) $r->id,
                 'author' => $r->author,
@@ -312,6 +318,7 @@ class ProductController extends Controller
             'metafields' => ['array'],
             'metafields.*.key' => ['nullable', 'string', 'max:255'],
             'metafields.*.value' => ['nullable', 'string'],
+            'metafields.*.placement' => ['nullable', 'in:before_buy_button,after_buy_button'],
             'images' => ['array'],
             'images.*' => ['nullable', 'string', 'max:2048'],
             'seoTitle' => ['nullable', 'string', 'max:255'],
@@ -321,6 +328,10 @@ class ProductController extends Controller
             'options.*.name' => ['nullable', 'string', 'max:255'],
             'options.*.values' => ['array'],
             'options.*.values.*' => ['string'],
+            // Hex swatch per value, keyed by the value string — only
+            // meaningful for a "Color" option, ignored for others.
+            'options.*.swatches' => ['array'],
+            'options.*.swatches.*' => ['nullable', 'string', 'max:20'],
             'variants' => ['array'],
             'variants.*.optionValues' => ['array'],
             'variants.*.price' => ['nullable'],
@@ -403,6 +414,7 @@ class ProductController extends Controller
             $product->metafields()->create([
                 'key' => $key,
                 'value' => $field['value'] ?? null,
+                'placement' => $field['placement'] ?? 'after_buy_button',
             ]);
         }
     }
@@ -429,9 +441,12 @@ class ProductController extends Controller
                 'position' => $position,
             ]);
 
+            $swatches = $option['swatches'] ?? [];
+
             foreach ($values as $valuePosition => $value) {
                 $optionValue = $productOption->values()->create([
                     'value' => $value,
+                    'swatch' => ($swatches[$value] ?? '') !== '' ? $swatches[$value] : null,
                     'position' => $valuePosition,
                 ]);
                 $valueIdsByOption[$name][$value] = $optionValue->id;
@@ -488,7 +503,11 @@ class ProductController extends Controller
             'collections' => $product->collections->pluck('id')->map(fn ($id) => (string) $id)->values(),
             'tags' => $product->tags->pluck('name')->values(),
             'metafields' => $product->metafields
-                ->map(fn ($m) => ['key' => $m->key, 'value' => $m->value])
+                ->map(fn ($m) => [
+                    'key' => $m->key,
+                    'value' => $m->value,
+                    'placement' => $m->placement,
+                ])
                 ->values(),
             'images' => $product->images->pluck('url')->values(),
             'seoTitle' => $product->seo_title,
@@ -497,6 +516,9 @@ class ProductController extends Controller
             'options' => $product->options->map(fn ($option) => [
                 'name' => $option->name,
                 'values' => $option->values->pluck('value')->values(),
+                'swatches' => $option->values
+                    ->filter(fn ($v) => $v->swatch !== null)
+                    ->pluck('swatch', 'value'),
             ])->values(),
             'variants' => $product->variants->map(fn ($variant) => [
                 'optionValues' => $variant->optionValues
@@ -560,6 +582,32 @@ class ProductController extends Controller
             $slugs->contains('new') => 'New',
             default => null,
         };
+    }
+
+    /** "fabric_weight" -> "Fabric Weight" — a readable label for a raw metafield key. */
+    private function humanizeMetafieldKey(string $key): string
+    {
+        return Str::of($key)->replace(['_', '-'], ' ')->title()->toString();
+    }
+
+    /**
+     * Metafields for one placement slot, keyed as heading + rich-text body —
+     * `care_details` is excluded since it keeps its own dedicated
+     * "Details & Care" accordion regardless of its placement value.
+     */
+    private function metafieldContentBlocks(Product $product, string $placement): array
+    {
+        return $product->metafields
+            ->where('placement', $placement)
+            ->reject(fn ($m) => $m->key === 'care_details')
+            ->filter(fn ($m) => trim(strip_tags((string) $m->value)) !== '')
+            ->map(fn ($m) => [
+                'key' => $m->key,
+                'heading' => $this->humanizeMetafieldKey($m->key),
+                'value' => $m->value,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

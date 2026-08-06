@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProductMetafield extends Model
 {
-    protected $fillable = ['product_id', 'key', 'value'];
+    protected $fillable = ['product_id', 'key', 'value', 'placement'];
 
     public function product(): BelongsTo
     {

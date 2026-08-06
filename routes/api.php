@@ -8,6 +8,7 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -57,6 +58,8 @@ Route::post('/orders/track', [OrderController::class, 'track']);
 
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 
+Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
+
 // ---------------------------------------------------------------------------
 // Dashboard — admin or editor only
 // ---------------------------------------------------------------------------
@@ -93,6 +96,10 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::post('/discounts', [DiscountController::class, 'store']);
     Route::put('/discounts/{id}', [DiscountController::class, 'update']);
     Route::delete('/discounts/{id}', [DiscountController::class, 'destroy']);
+
+    Route::get('/reviews', [ReviewController::class, 'index']);
+    Route::patch('/reviews/{id}/status', [ReviewController::class, 'updateStatus']);
+    Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
 });
 
 // ---------------------------------------------------------------------------
