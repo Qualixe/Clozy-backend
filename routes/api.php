@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\HeroSlideController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
@@ -52,6 +53,9 @@ Route::get('/settings', [SettingsController::class, 'show']);
 Route::get('/media/file/{filename}', [MediaController::class, 'serve']);
 
 Route::post('/orders', [OrderController::class, 'store']);
+Route::post('/orders/track', [OrderController::class, 'track']);
+
+Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 
 // ---------------------------------------------------------------------------
 // Dashboard — admin or editor only
@@ -84,6 +88,11 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/hero-slides', [HeroSlideController::class, 'update']);
 
     Route::put('/settings', [SettingsController::class, 'update']);
+
+    Route::get('/discounts', [DiscountController::class, 'index']);
+    Route::post('/discounts', [DiscountController::class, 'store']);
+    Route::put('/discounts/{id}', [DiscountController::class, 'update']);
+    Route::delete('/discounts/{id}', [DiscountController::class, 'destroy']);
 });
 
 // ---------------------------------------------------------------------------

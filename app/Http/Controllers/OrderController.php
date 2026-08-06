@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Discount;
 use App\Models\Order;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -28,6 +30,38 @@ class OrderController extends Controller
     }
 
     /**
+     * Public order lookup for the storefront's Track Order page. Requires
+     * both the order number and the email/phone on file — matching on the
+     * order number alone would let anyone page through every order.
+     */
+    public function track(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'orderNumber' => ['required', 'string'],
+            'contact' => ['required', 'string'],
+        ]);
+
+        $orderNumber = ltrim(trim($validated['orderNumber']), '#');
+        $contact = trim($validated['contact']);
+
+        $order = Order::with('items')
+            ->where('order_number', $orderNumber)
+            ->where(function ($query) use ($contact) {
+                $query->where('customer_email', $contact)
+                    ->orWhere('customer_phone', $contact);
+            })
+            ->first();
+
+        if (! $order) {
+            return response()->json([
+                'message' => "We couldn't find an order matching those details.",
+            ], 404);
+        }
+
+        return response()->json($this->detail($order));
+    }
+
+    /**
      * Powers checkout — accepts the cart + shipping form as submitted by
      * the checkout page and creates a real order with line-item snapshots.
      */
@@ -44,6 +78,7 @@ class OrderController extends Controller
             'paymentMethod' => ['required', 'in:cod,bkash,cash'],
             'bkashNumber' => ['nullable', 'string', 'max:32'],
             'shippingCost' => ['nullable', 'numeric', 'min:0'],
+            'discountCode' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.productId' => ['nullable'],
             'items.*.name' => ['required', 'string'],
@@ -58,6 +93,35 @@ class OrderController extends Controller
                 ->sum(fn ($item) => $item['price'] * $item['qty']);
             $shipping = (float) ($validated['shippingCost'] ?? 0);
 
+            // Re-validated here rather than trusting whatever the
+            // checkout page's earlier `/discounts/validate` preview said —
+            // a code can expire, hit its usage limit, or get deactivated
+            // between preview and submit.
+            $discount = null;
+            $discountAmount = 0.0;
+            if (! empty($validated['discountCode'])) {
+                $discount = Discount::findByCode($validated['discountCode'], lockForUpdate: true);
+
+                if (! $discount) {
+                    throw ValidationException::withMessages([
+                        'discountCode' => "That discount code doesn't exist.",
+                    ]);
+                }
+
+                $error = $discount->validationError($subtotal);
+                if ($error) {
+                    throw ValidationException::withMessages(['discountCode' => $error]);
+                }
+
+                if ($discount->isFreeShipping()) {
+                    $shipping = 0.0;
+                } else {
+                    $discountAmount = $discount->amountOff($subtotal);
+                }
+
+                $discount->increment('used_count');
+            }
+
             $order = Order::create([
                 'order_number' => $this->nextOrderNumber(),
                 'customer_name' => $validated['name'],
@@ -67,7 +131,9 @@ class OrderController extends Controller
                 'district' => $validated['district'] ?? null,
                 'subtotal' => $subtotal,
                 'shipping_cost' => $shipping,
-                'total' => $subtotal + $shipping,
+                'discount_code' => $discount?->code,
+                'discount_amount' => $discountAmount,
+                'total' => max(0, $subtotal + $shipping - $discountAmount),
                 'payment_method' => $validated['paymentMethod'],
                 'bkash_number' => $validated['paymentMethod'] === 'bkash'
                     ? ($validated['bkashNumber'] ?? null)
@@ -148,6 +214,8 @@ class OrderController extends Controller
             'district' => $order->district,
             'subtotal' => (float) $order->subtotal,
             'shippingCost' => (float) $order->shipping_cost,
+            'discountCode' => $order->discount_code,
+            'discountAmount' => (float) $order->discount_amount,
             'bkashNumber' => $order->bkash_number,
             'items' => $order->items->map(fn ($item) => [
                 'id' => (string) $item->id,

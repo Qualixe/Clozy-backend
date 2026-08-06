@@ -16,6 +16,8 @@ class Order extends Model
         'district',
         'subtotal',
         'shipping_cost',
+        'discount_code',
+        'discount_amount',
         'total',
         'payment_method',
         'bkash_number',
@@ -25,6 +27,7 @@ class Order extends Model
     protected $casts = [
         'subtotal' => 'decimal:2',
         'shipping_cost' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'total' => 'decimal:2',
     ];
 
