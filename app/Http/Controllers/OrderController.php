@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Discount;
 use App\Models\Order;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
+    public function __construct(private readonly SmsService $sms) {}
+
     public function index(): JsonResponse
     {
         $orders = Order::query()->orderByDesc('created_at')->get();
@@ -157,6 +160,10 @@ class OrderController extends Controller
             return $order;
         });
 
+        // Best-effort and after the transaction commits — a gateway hiccup
+        // must never roll back or fail an otherwise-successful order.
+        $this->sms->sendOrderConfirmation($order);
+
         return response()->json($this->detail($order->load('items')), 201);
     }
 
@@ -175,7 +182,12 @@ class OrderController extends Controller
             'status' => ['required', 'in:processing,fulfilled,cancelled'],
         ]);
 
+        $wasCancelled = $order->status === 'cancelled';
         $order->update(['status' => $validated['status']]);
+
+        if ($validated['status'] === 'cancelled' && ! $wasCancelled) {
+            $this->sms->sendOrderCancelled($order);
+        }
 
         return response()->json($this->summarize($order));
     }
