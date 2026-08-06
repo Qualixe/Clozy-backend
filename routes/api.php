@@ -3,6 +3,7 @@
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\HeroSlideController;
 use App\Http\Controllers\MediaController;
@@ -61,6 +62,8 @@ Route::post('/orders/track', [OrderController::class, 'track']);
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 
 Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
+
+Route::post('/chat', [ChatController::class, 'send']);
 
 // ---------------------------------------------------------------------------
 // Dashboard — admin or editor only
