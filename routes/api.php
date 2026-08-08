@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGridBannerController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\FaqController;
 use App\Http\Controllers\HeroSlideController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
@@ -55,6 +56,8 @@ Route::get('/menus/handle/{handle}', [MenuController::class, 'showByHandle']);
 
 Route::get('/policies/published', [PolicyController::class, 'publicIndex']);
 Route::get('/policies/slug/{slug}', [PolicyController::class, 'showBySlug']);
+
+Route::get('/faqs/published', [FaqController::class, 'publicIndex']);
 
 Route::get('/hero-slides', [HeroSlideController::class, 'index']);
 
@@ -115,6 +118,13 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::get('/policies/{id}', [PolicyController::class, 'show']);
     Route::put('/policies/{id}', [PolicyController::class, 'update']);
     Route::delete('/policies/{id}', [PolicyController::class, 'destroy']);
+
+    Route::get('/faqs', [FaqController::class, 'index']);
+    Route::post('/faqs', [FaqController::class, 'store']);
+    Route::put('/faqs/reorder', [FaqController::class, 'reorder']);
+    Route::get('/faqs/{id}', [FaqController::class, 'show']);
+    Route::put('/faqs/{id}', [FaqController::class, 'update']);
+    Route::delete('/faqs/{id}', [FaqController::class, 'destroy']);
 
     Route::get('/media', [MediaController::class, 'index']);
     Route::post('/media', [MediaController::class, 'store']);
