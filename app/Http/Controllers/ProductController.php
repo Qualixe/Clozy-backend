@@ -68,18 +68,14 @@ class ProductController extends Controller
         }
 
         $related = Product::query()
-            ->with(['images', 'variants'])
+            ->with(['category', 'tags', 'images', 'variants'])
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews')
             ->where('id', '!=', $product->id)
             ->orderBy('id')
             ->limit(4)
             ->get()
-            ->map(fn (Product $p) => [
-                'id' => (string) $p->id,
-                'slug' => $p->slug,
-                'name' => $p->title,
-                'price' => $this->resolvePrice($p),
-                'image' => $p->images->first()?->url,
-            ])
+            ->map(fn (Product $p) => $this->summarize($p))
             ->values();
 
         $colorOption = $product->options->firstWhere('name', 'Color');
