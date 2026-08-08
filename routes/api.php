@@ -15,6 +15,7 @@ use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SmsController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VideoSectionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/ping', function () {
@@ -52,6 +53,8 @@ Route::get('/menus/handle/{handle}', [MenuController::class, 'showByHandle']);
 Route::get('/hero-slides', [HeroSlideController::class, 'index']);
 
 Route::get('/new-arrivals', [NewArrivalsController::class, 'index']);
+
+Route::get('/video-section', [VideoSectionController::class, 'index']);
 
 Route::get('/settings', [SettingsController::class, 'show']);
 
@@ -104,6 +107,8 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/hero-slides', [HeroSlideController::class, 'update']);
 
     Route::put('/new-arrivals', [NewArrivalsController::class, 'update']);
+
+    Route::put('/video-section', [VideoSectionController::class, 'update']);
 
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);

@@ -25,6 +25,8 @@ class StoreSetting extends Model
         'new_arrivals_enabled',
         'new_arrivals_eyebrow',
         'new_arrivals_heading',
+        'video_section_enabled',
+        'video_section_heading',
     ];
 
     protected $casts = [
@@ -32,6 +34,7 @@ class StoreSetting extends Model
         'sms_order_cancelled_enabled' => 'boolean',
         'sms_promotional_enabled' => 'boolean',
         'new_arrivals_enabled' => 'boolean',
+        'video_section_enabled' => 'boolean',
     ];
 
     /** The single settings row, created on first access. */
