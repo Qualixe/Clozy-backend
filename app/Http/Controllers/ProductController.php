@@ -536,8 +536,11 @@ class ProductController extends Controller
     /**
      * Shape shared by the product list and the top level of a product's
      * detail response — matches the frontend's `Product` type exactly.
+     * Public so other controllers (e.g. NewArrivalsController) needing the
+     * same product card shape can reuse it instead of duplicating the
+     * price/badge resolution logic.
      */
-    private function summarize(Product $product): array
+    public function summarize(Product $product): array
     {
         return [
             'id' => (string) $product->id,

@@ -22,12 +22,16 @@ class StoreSetting extends Model
         'anthropic_api_key',
         'logo_url',
         'favicon_url',
+        'new_arrivals_enabled',
+        'new_arrivals_eyebrow',
+        'new_arrivals_heading',
     ];
 
     protected $casts = [
         'sms_order_confirmation_enabled' => 'boolean',
         'sms_order_cancelled_enabled' => 'boolean',
         'sms_promotional_enabled' => 'boolean',
+        'new_arrivals_enabled' => 'boolean',
     ];
 
     /** The single settings row, created on first access. */
