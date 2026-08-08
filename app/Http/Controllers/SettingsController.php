@@ -41,6 +41,8 @@ class SettingsController extends Controller
             'smsOrderCancelledTemplate' => ['nullable', 'string', 'max:1000'],
             'smsPromotionalEnabled' => ['boolean'],
             'anthropicApiKey' => ['nullable', 'string', 'max:255'],
+            'logoUrl' => ['nullable', 'string', 'max:2048'],
+            'faviconUrl' => ['nullable', 'string', 'max:2048'],
         ]);
 
         $settings = StoreSetting::current();
@@ -58,6 +60,8 @@ class SettingsController extends Controller
             'sms_order_cancelled_template' => $validated['smsOrderCancelledTemplate'] ?? null,
             'sms_promotional_enabled' => $validated['smsPromotionalEnabled'] ?? false,
             'anthropic_api_key' => $validated['anthropicApiKey'] ?? null,
+            'logo_url' => $validated['logoUrl'] ?? null,
+            'favicon_url' => $validated['faviconUrl'] ?? null,
         ]);
 
         return response()->json($this->summarizeAdmin($settings));
@@ -73,6 +77,10 @@ class SettingsController extends Controller
             // Safe to expose publicly — a boolean, never the key itself. The
             // storefront chat widget uses it to decide whether to render.
             'aiChatEnabled' => $settings->anthropic_api_key !== null,
+            // The logo image itself is already public on every storefront
+            // page, so its URL is fine to serve from the public endpoint.
+            'logoUrl' => $settings->logo_url,
+            'faviconUrl' => $settings->favicon_url,
         ];
     }
 

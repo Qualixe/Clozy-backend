@@ -20,6 +20,8 @@ class StoreSetting extends Model
         'sms_order_cancelled_template',
         'sms_promotional_enabled',
         'anthropic_api_key',
+        'logo_url',
+        'favicon_url',
     ];
 
     protected $casts = [
