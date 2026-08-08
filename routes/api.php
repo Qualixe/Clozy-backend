@@ -79,6 +79,8 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/categories/reorder', [CategoryController::class, 'reorder']);
     Route::put('/categories/{id}', [CategoryController::class, 'update']);
     Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+    Route::get('/categories/{id}/products', [CategoryController::class, 'products']);
+    Route::put('/categories/{id}/products', [CategoryController::class, 'updateProducts']);
 
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);

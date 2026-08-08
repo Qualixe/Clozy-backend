@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +92,52 @@ class CategoryController extends Controller
         return response()->json($this->summarize($category));
     }
 
+    /**
+     * Products currently shown under this category on the storefront —
+     * both via the primary category and via manual collection membership.
+     * Backs the dashboard's Shopify-style "Products" picker on the
+     * category editor.
+     */
+    public function products(string $id): JsonResponse
+    {
+        $category = Category::find($id);
+
+        if (! $category) {
+            return response()->json(['message' => 'Category not found'], 404);
+        }
+
+        $primary = $category->products()->with('images')->get()
+            ->map(fn (Product $p) => $this->summarizeProduct($p, true));
+
+        $additional = $category->collectionProducts()->with('images')->get()
+            ->map(fn (Product $p) => $this->summarizeProduct($p, false));
+
+        return response()->json($primary->concat($additional)->values());
+    }
+
+    /**
+     * Sets this category's manually-curated product list. `productIds` is
+     * the full desired set of secondary (non-primary) members — a plain
+     * sync, matching how a product's own "collections" picker saves.
+     */
+    public function updateProducts(Request $request, string $id): JsonResponse
+    {
+        $category = Category::find($id);
+
+        if (! $category) {
+            return response()->json(['message' => 'Category not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'productIds' => ['array'],
+            'productIds.*' => ['integer', 'exists:products,id'],
+        ]);
+
+        $category->collectionProducts()->sync($validated['productIds'] ?? []);
+
+        return response()->json(['message' => 'Products updated']);
+    }
+
     public function destroy(string $id): JsonResponse
     {
         $category = Category::find($id);
@@ -161,6 +208,18 @@ class CategoryController extends Controller
             'seoTitle' => $category->seo_title,
             'seoDescription' => $category->seo_description,
             'productCount' => (int) ($category->products_count ?? 0),
+        ];
+    }
+
+    private function summarizeProduct(Product $product, bool $isPrimary): array
+    {
+        return [
+            'id' => (string) $product->id,
+            'name' => $product->title,
+            'slug' => $product->slug,
+            'image' => $product->images->first()?->url,
+            'price' => (float) ($product->price ?? 0),
+            'isPrimary' => $isPrimary,
         ];
     }
 }
