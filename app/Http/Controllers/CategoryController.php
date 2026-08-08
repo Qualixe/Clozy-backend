@@ -197,7 +197,11 @@ class CategoryController extends Controller
         return $slug;
     }
 
-    private function summarize(Category $category): array
+    /**
+     * Public so other controllers (e.g. CategoryGridBannerController)
+     * needing the same category shape can reuse it.
+     */
+    public function summarize(Category $category): array
     {
         return [
             'id' => (string) $category->id,

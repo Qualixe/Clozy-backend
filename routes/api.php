@@ -3,6 +3,7 @@
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CategoryGridBannerController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\HeroSlideController;
@@ -10,7 +11,9 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\NewArrivalsController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PolicyController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\PromoBannerController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SmsController;
@@ -50,11 +53,18 @@ Route::get('/categories/{slug}', [CategoryController::class, 'show']);
 
 Route::get('/menus/handle/{handle}', [MenuController::class, 'showByHandle']);
 
+Route::get('/policies/published', [PolicyController::class, 'publicIndex']);
+Route::get('/policies/slug/{slug}', [PolicyController::class, 'showBySlug']);
+
 Route::get('/hero-slides', [HeroSlideController::class, 'index']);
 
 Route::get('/new-arrivals', [NewArrivalsController::class, 'index']);
 
 Route::get('/video-section', [VideoSectionController::class, 'index']);
+
+Route::get('/promo-banner', [PromoBannerController::class, 'index']);
+
+Route::get('/category-grid-banner', [CategoryGridBannerController::class, 'index']);
 
 Route::get('/settings', [SettingsController::class, 'show']);
 
@@ -100,6 +110,12 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/menus/{id}', [MenuController::class, 'update']);
     Route::delete('/menus/{id}', [MenuController::class, 'destroy']);
 
+    Route::get('/policies', [PolicyController::class, 'index']);
+    Route::post('/policies', [PolicyController::class, 'store']);
+    Route::get('/policies/{id}', [PolicyController::class, 'show']);
+    Route::put('/policies/{id}', [PolicyController::class, 'update']);
+    Route::delete('/policies/{id}', [PolicyController::class, 'destroy']);
+
     Route::get('/media', [MediaController::class, 'index']);
     Route::post('/media', [MediaController::class, 'store']);
     Route::delete('/media/{id}', [MediaController::class, 'destroy']);
@@ -109,6 +125,10 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/new-arrivals', [NewArrivalsController::class, 'update']);
 
     Route::put('/video-section', [VideoSectionController::class, 'update']);
+
+    Route::put('/promo-banner', [PromoBannerController::class, 'update']);
+
+    Route::put('/category-grid-banner', [CategoryGridBannerController::class, 'update']);
 
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
