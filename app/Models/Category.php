@@ -14,6 +14,7 @@ class Category extends Model
         'description',
         'seo_title',
         'seo_description',
+        'position',
     ];
 
     public function products(): HasMany

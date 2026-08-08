@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -12,9 +13,29 @@ class CategoryController extends Controller
 {
     public function index(): JsonResponse
     {
-        $categories = Category::withCount('products')->orderBy('name')->get();
+        $categories = Category::withCount('products')->orderBy('position')->orderBy('name')->get();
 
         return response()->json($categories->map(fn (Category $c) => $this->summarize($c))->values());
+    }
+
+    /**
+     * Persists the dashboard's drag-and-drop category order. `ids` is the
+     * full list of category ids in their new display order.
+     */
+    public function reorder(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['ids'] as $index => $id) {
+                Category::where('id', $id)->update(['position' => $index]);
+            }
+        });
+
+        return response()->json(['message' => 'Order updated']);
     }
 
     /**
@@ -42,6 +63,7 @@ class CategoryController extends Controller
         $category = Category::create([
             ...$validated,
             'slug' => $this->uniqueSlug($validated['name']),
+            'position' => (Category::max('position') ?? -1) + 1,
         ]);
 
         $category->loadCount('products');
