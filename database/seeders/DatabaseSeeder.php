@@ -26,14 +26,15 @@ class DatabaseSeeder extends Seeder
         // re-run without failing on duplicate emails.
         User::updateOrCreate(
             ['email' => 'admin@clozy.com'],
-            ['name' => 'Admin', 'password' => 'password123', 'role' => 'admin']
+            ['name' => 'Admin', 'password' => 'password123', 'role' => 'owner']
         );
 
         User::updateOrCreate(
             ['email' => 'editor@clozy.com'],
-            ['name' => 'Test Editor', 'password' => 'password123', 'role' => 'editor']
+            ['name' => 'Test Editor', 'password' => 'password123', 'role' => 'admin']
         );
 
+        $this->call(RolesAndPermissionsSeeder::class);
         $this->call(ProductSeeder::class);
         $this->call(HeroSlideSeeder::class);
     }

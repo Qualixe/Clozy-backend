@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 
 class AuthController extends Controller
 {
@@ -98,6 +99,24 @@ class AuthController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
+            'roles' => $user->getRoleNames()->values()->all(),
+            'permissions' => $this->permissionNamesFor($user),
         ];
+    }
+
+    /**
+     * Owner bypasses every permission check via Gate::before (see
+     * AppServiceProvider) rather than holding explicit permission rows, so
+     * it's reported here as having all of them — this only feeds frontend
+     * UI gating, the real enforcement stays server-side regardless of what
+     * this array says.
+     */
+    private function permissionNamesFor(User $user): array
+    {
+        if ($user->hasRole('owner')) {
+            return Permission::pluck('name')->values()->all();
+        }
+
+        return $user->getAllPermissions()->pluck('name')->values()->all();
     }
 }

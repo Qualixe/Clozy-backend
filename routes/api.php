@@ -41,6 +41,7 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::get('/me', [AuthController::class, 'me']);
 });
 
 // ---------------------------------------------------------------------------
@@ -88,34 +89,47 @@ Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
 Route::post('/chat', [ChatController::class, 'send']);
 
 // ---------------------------------------------------------------------------
-// Dashboard — admin or editor only
+// Dashboard — permission-gated (see RolesAndPermissionsSeeder for the full
+// role → permission mapping)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:manage_products'])->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
     Route::get('/products/{id}/edit', [ProductController::class, 'edit']);
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:manage_categories'])->group(function () {
     Route::post('/categories', [CategoryController::class, 'store']);
     Route::put('/categories/reorder', [CategoryController::class, 'reorder']);
     Route::put('/categories/{id}', [CategoryController::class, 'update']);
     Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
     Route::get('/categories/{id}/products', [CategoryController::class, 'products']);
     Route::put('/categories/{id}/products', [CategoryController::class, 'updateProducts']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:view_orders'])->group(function () {
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+});
+Route::middleware(['auth:sanctum', 'permission:manage_orders'])->group(function () {
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function () {
     Route::post('/analytics/ai-insights', [AnalyticsController::class, 'aiInsights']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:manage_menus'])->group(function () {
     Route::get('/menus', [MenuController::class, 'index']);
     Route::post('/menus', [MenuController::class, 'store']);
     Route::get('/menus/{id}', [MenuController::class, 'show']);
     Route::put('/menus/{id}', [MenuController::class, 'update']);
     Route::delete('/menus/{id}', [MenuController::class, 'destroy']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:manage_cms_pages'])->group(function () {
     Route::get('/policies', [PolicyController::class, 'index']);
     Route::post('/policies', [PolicyController::class, 'store']);
     Route::get('/policies/{id}', [PolicyController::class, 'show']);
@@ -129,45 +143,54 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/faqs/{id}', [FaqController::class, 'update']);
     Route::delete('/faqs/{id}', [FaqController::class, 'destroy']);
 
+    Route::put('/about-page', [AboutPageController::class, 'update']);
+});
+
+Route::middleware(['auth:sanctum', 'permission:manage_media'])->group(function () {
     Route::get('/media', [MediaController::class, 'index']);
     Route::post('/media', [MediaController::class, 'store']);
     Route::delete('/media/{id}', [MediaController::class, 'destroy']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:manage_theme'])->group(function () {
     Route::put('/hero-slides', [HeroSlideController::class, 'update']);
-
     Route::put('/new-arrivals', [NewArrivalsController::class, 'update']);
-
     Route::put('/video-section', [VideoSectionController::class, 'update']);
-
     Route::put('/promo-banner', [PromoBannerController::class, 'update']);
-
     Route::put('/category-grid-banner', [CategoryGridBannerController::class, 'update']);
+});
 
-    Route::put('/about-page', [AboutPageController::class, 'update']);
-
+Route::middleware(['auth:sanctum', 'permission:manage_settings'])->group(function () {
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:view_sms'])->group(function () {
     Route::get('/sms/logs', [SmsController::class, 'logs']);
     Route::get('/sms/recipients', [SmsController::class, 'recipients']);
+});
+Route::middleware(['auth:sanctum', 'permission:manage_sms'])->group(function () {
     Route::post('/sms/promotional', [SmsController::class, 'sendPromotional']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:manage_discounts'])->group(function () {
     Route::get('/discounts', [DiscountController::class, 'index']);
     Route::post('/discounts', [DiscountController::class, 'store']);
     Route::put('/discounts/{id}', [DiscountController::class, 'update']);
     Route::delete('/discounts/{id}', [DiscountController::class, 'destroy']);
+});
 
+Route::middleware(['auth:sanctum', 'permission:view_reviews'])->group(function () {
     Route::get('/reviews', [ReviewController::class, 'index']);
+});
+Route::middleware(['auth:sanctum', 'permission:manage_reviews'])->group(function () {
     Route::patch('/reviews/{id}/status', [ReviewController::class, 'updateStatus']);
     Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
 });
 
-// ---------------------------------------------------------------------------
-// Dashboard — admin only
-// ---------------------------------------------------------------------------
-
-Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:manage_staff'])->group(function () {
     Route::get('/users', [UserController::class, 'index']);
+    Route::get('/users/{id}', [UserController::class, 'show']);
     Route::post('/users', [UserController::class, 'store']);
     Route::put('/users/{id}', [UserController::class, 'update']);
     Route::delete('/users/{id}', [UserController::class, 'destroy']);
