@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AboutPageController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
@@ -68,6 +69,8 @@ Route::get('/video-section', [VideoSectionController::class, 'index']);
 Route::get('/promo-banner', [PromoBannerController::class, 'index']);
 
 Route::get('/category-grid-banner', [CategoryGridBannerController::class, 'index']);
+
+Route::get('/about-page', [AboutPageController::class, 'index']);
 
 Route::get('/settings', [SettingsController::class, 'show']);
 
@@ -139,6 +142,8 @@ Route::middleware(['auth:sanctum', 'role:admin,editor'])->group(function () {
     Route::put('/promo-banner', [PromoBannerController::class, 'update']);
 
     Route::put('/category-grid-banner', [CategoryGridBannerController::class, 'update']);
+
+    Route::put('/about-page', [AboutPageController::class, 'update']);
 
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
