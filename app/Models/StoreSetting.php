@@ -35,6 +35,11 @@ class StoreSetting extends Model
         'promo_banner_cta_label',
         'promo_banner_cta_href',
         'category_grid_banner_enabled',
+        'footer_tagline',
+        'footer_instagram_url',
+        'footer_twitter_url',
+        'footer_facebook_url',
+        'footer_youtube_url',
     ];
 
     protected $casts = [

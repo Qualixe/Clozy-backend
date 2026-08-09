@@ -43,6 +43,11 @@ class SettingsController extends Controller
             'anthropicApiKey' => ['nullable', 'string', 'max:255'],
             'logoUrl' => ['nullable', 'string', 'max:2048'],
             'faviconUrl' => ['nullable', 'string', 'max:2048'],
+            'footerTagline' => ['nullable', 'string', 'max:500'],
+            'footerInstagramUrl' => ['nullable', 'string', 'max:2048'],
+            'footerTwitterUrl' => ['nullable', 'string', 'max:2048'],
+            'footerFacebookUrl' => ['nullable', 'string', 'max:2048'],
+            'footerYoutubeUrl' => ['nullable', 'string', 'max:2048'],
         ]);
 
         $settings = StoreSetting::current();
@@ -62,6 +67,11 @@ class SettingsController extends Controller
             'anthropic_api_key' => $validated['anthropicApiKey'] ?? null,
             'logo_url' => $validated['logoUrl'] ?? null,
             'favicon_url' => $validated['faviconUrl'] ?? null,
+            'footer_tagline' => $validated['footerTagline'] ?? null,
+            'footer_instagram_url' => $validated['footerInstagramUrl'] ?? null,
+            'footer_twitter_url' => $validated['footerTwitterUrl'] ?? null,
+            'footer_facebook_url' => $validated['footerFacebookUrl'] ?? null,
+            'footer_youtube_url' => $validated['footerYoutubeUrl'] ?? null,
         ]);
 
         return response()->json($this->summarizeAdmin($settings));
@@ -81,6 +91,11 @@ class SettingsController extends Controller
             // page, so its URL is fine to serve from the public endpoint.
             'logoUrl' => $settings->logo_url,
             'faviconUrl' => $settings->favicon_url,
+            'footerTagline' => $settings->footer_tagline,
+            'footerInstagramUrl' => $settings->footer_instagram_url,
+            'footerTwitterUrl' => $settings->footer_twitter_url,
+            'footerFacebookUrl' => $settings->footer_facebook_url,
+            'footerYoutubeUrl' => $settings->footer_youtube_url,
         ];
     }
 
