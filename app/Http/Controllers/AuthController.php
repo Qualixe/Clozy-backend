@@ -7,10 +7,17 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    /** After this many failed attempts from the same IP, further logins are blocked. */
+    private const MAX_LOGIN_ATTEMPTS = 5;
+
+    /** How long an IP stays blocked once it hits the attempt limit. */
+    private const LOGIN_LOCKOUT_SECONDS = 15 * 60;
+
     /** Customer signup — always created as a plain "user", never a staff role. */
     public function register(Request $request): JsonResponse
     {
@@ -42,13 +49,27 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        $throttleKey = 'login:' . $request->ip();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, self::MAX_LOGIN_ATTEMPTS)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+
+            throw ValidationException::withMessages([
+                'email' => ["Too many login attempts. Please try again in " . ceil($seconds / 60) . ' minute(s).'],
+            ]);
+        }
+
         $user = User::where('email', $validated['email'])->first();
 
         if (! $user || ! Hash::check($validated['password'], $user->password)) {
+            RateLimiter::hit($throttleKey, self::LOGIN_LOCKOUT_SECONDS);
+
             throw ValidationException::withMessages([
                 'email' => ['Those credentials do not match our records.'],
             ]);
         }
+
+        RateLimiter::clear($throttleKey);
 
         $token = $user->createToken('storefront')->plainTextToken;
 
