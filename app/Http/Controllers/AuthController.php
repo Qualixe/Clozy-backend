@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 
@@ -34,6 +36,8 @@ class AuthController extends Controller
             'password' => $validated['password'],
             'role' => 'user',
         ]);
+
+        $user->sendEmailVerificationNotification();
 
         $token = $user->createToken('storefront')->plainTextToken;
 
@@ -92,6 +96,74 @@ class AuthController extends Controller
         return response()->json($this->summarize($request->user()));
     }
 
+    /** Self-service profile edit — the storefront's Account > Settings page. */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'password' => ['nullable', 'string', 'min:8'],
+        ]);
+
+        $emailChanged = $validated['email'] !== $user->email;
+
+        $user->name = $validated['name'];
+        $user->email = $validated['email'];
+        // A changed email hasn't been proven to belong to this person yet —
+        // require it to be verified again, same as the address on signup.
+        if ($emailChanged) {
+            $user->email_verified_at = null;
+        }
+        if (! empty($validated['password'])) {
+            $user->password = $validated['password'];
+        }
+        $user->save();
+
+        if ($emailChanged) {
+            $user->sendEmailVerificationNotification();
+        }
+
+        return response()->json($this->summarize($user));
+    }
+
+    /**
+     * The link a verification email sends the user to. Deliberately doesn't
+     * require `auth:sanctum` — the browser opens this straight from the
+     * email with no bearer token attached, so the signed URL itself (see
+     * the `signed` route middleware) is the proof of identity.
+     */
+    public function verifyEmail(Request $request, string $id, string $hash): RedirectResponse
+    {
+        $user = User::find($id);
+        $frontendUrl = config('app.frontend_url');
+
+        if (! $user || ! hash_equals($hash, sha1($user->getEmailForVerification()))) {
+            return redirect("{$frontendUrl}/email-verified?error=invalid");
+        }
+
+        if (! $user->hasVerifiedEmail()) {
+            $user->markEmailAsVerified();
+        }
+
+        return redirect("{$frontendUrl}/email-verified");
+    }
+
+    /** Lets a signed-in but unverified user request a fresh verification email. */
+    public function resendVerificationEmail(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json(['message' => 'Email already verified.']);
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return response()->json(['message' => 'Verification email sent.']);
+    }
+
     private function summarize(User $user): array
     {
         return [
@@ -101,6 +173,7 @@ class AuthController extends Controller
             'role' => $user->role,
             'roles' => $user->getRoleNames()->values()->all(),
             'permissions' => $this->permissionNamesFor($user),
+            'emailVerified' => $user->hasVerifiedEmail(),
         ];
     }
 

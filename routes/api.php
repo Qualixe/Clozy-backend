@@ -38,10 +38,36 @@ Route::get('/ping', function () {
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 
+// Opened straight from the verification email — no bearer token attached,
+// the signed URL itself proves identity.
+Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
+    ->middleware(['signed'])
+    ->name('verification.verify');
+
+// This app has no Blade "please verify your email" page to redirect to —
+// Laravel's `verified` middleware still needs a route by this name to exist
+// for requests it doesn't detect as JSON (e.g. a bare `fetch()` with no
+// explicit Accept header), so give it one that just answers in JSON too,
+// rather than crashing with a RouteNotFoundException.
+Route::get('/email/verify', function () {
+    return response()->json(['message' => 'Your email address is not verified.'], 403);
+})->middleware('auth:sanctum')->name('verification.notice');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::put('/me', [AuthController::class, 'updateProfile']);
+    Route::post('/email/verification-notification', [AuthController::class, 'resendVerificationEmail'])
+        ->middleware('throttle:6,1');
+});
+
+// The signed-in customer's own order history — any logged-in *and verified*
+// account, no permission check (it's scoped to their own data, not a
+// dashboard feature).
+Route::middleware(['auth:sanctum', 'verified'])->group(function () {
+    Route::get('/account/orders', [OrderController::class, 'myOrders']);
+    Route::get('/account/orders/{id}', [OrderController::class, 'myOrder']);
 });
 
 // ---------------------------------------------------------------------------

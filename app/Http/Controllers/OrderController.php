@@ -33,6 +33,38 @@ class OrderController extends Controller
     }
 
     /**
+     * The signed-in customer's own order history — matched by email rather
+     * than a `user_id` column, since guest checkout orders share the same
+     * lookup key. Storefront Account > Orders page.
+     */
+    public function myOrders(Request $request): JsonResponse
+    {
+        $orders = Order::where('customer_email', $request->user()->email)
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json($orders->map(fn (Order $o) => $this->summarize($o))->values());
+    }
+
+    /**
+     * A single order's detail for the signed-in customer — scoped to their
+     * own email so one account can't view another's order by guessing IDs.
+     */
+    public function myOrder(Request $request, string $id): JsonResponse
+    {
+        $order = Order::with('items')
+            ->where('id', $id)
+            ->where('customer_email', $request->user()->email)
+            ->first();
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        return response()->json($this->detail($order));
+    }
+
+    /**
      * Public order lookup for the storefront's Track Order page. Requires
      * both the order number and the email/phone on file — matching on the
      * order number alone would let anyone page through every order.
