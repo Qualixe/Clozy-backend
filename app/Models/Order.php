@@ -22,6 +22,9 @@ class Order extends Model
         'payment_method',
         'bkash_number',
         'status',
+        'steadfast_consignment_id',
+        'steadfast_tracking_code',
+        'steadfast_status',
     ];
 
     protected $casts = [

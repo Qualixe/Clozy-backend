@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGridBannerController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\CourierController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\FaqController;
 use App\Http\Controllers\HeroSlideController;
@@ -146,6 +147,8 @@ Route::middleware(['auth:sanctum', 'permission:view_orders'])->group(function ()
 });
 Route::middleware(['auth:sanctum', 'permission:manage_orders'])->group(function () {
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::post('/orders/{id}/ship', [CourierController::class, 'send']);
+    Route::get('/orders/{id}/tracking', [CourierController::class, 'refreshStatus']);
 });
 
 Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function () {
@@ -194,6 +197,7 @@ Route::middleware(['auth:sanctum', 'permission:manage_theme'])->group(function (
 Route::middleware(['auth:sanctum', 'permission:manage_settings'])->group(function () {
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
+    Route::get('/courier/balance', [CourierController::class, 'balance']);
 });
 
 Route::middleware(['auth:sanctum', 'permission:view_sms'])->group(function () {
