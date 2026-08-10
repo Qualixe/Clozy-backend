@@ -13,6 +13,7 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\NewArrivalsController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PhoneVerificationController;
 use App\Http\Controllers\PolicyController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PromoBannerController;
@@ -107,6 +108,10 @@ Route::get('/media/file/{filename}', [MediaController::class, 'serve']);
 
 Route::post('/orders', [OrderController::class, 'store']);
 Route::post('/orders/track', [OrderController::class, 'track']);
+
+// Checkout's fake-order-protection step — see PhoneVerificationController.
+Route::post('/checkout/phone/send-code', [PhoneVerificationController::class, 'sendCode']);
+Route::post('/checkout/phone/verify-code', [PhoneVerificationController::class, 'verifyCode']);
 
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 

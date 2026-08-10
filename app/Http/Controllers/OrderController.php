@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Discount;
 use App\Models\Order;
+use App\Models\PhoneVerification;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class OrderController extends Controller
 {
@@ -122,6 +124,31 @@ class OrderController extends Controller
             'items.*.price' => ['required', 'numeric', 'min:0'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
         ]);
+
+        // Dashboard-created (staff) sales skip phone verification entirely —
+        // this is only fake-order protection for anonymous storefront
+        // checkout. The route has no `auth:sanctum` middleware (guest
+        // checkout must work), so staff-ness is resolved from an optional
+        // bearer token instead — see CreateOrderDialog on the frontend,
+        // which already sends one.
+        $isStaffOrder = false;
+        if ($bearerToken = $request->bearerToken()) {
+            $user = PersonalAccessToken::findToken($bearerToken)?->tokenable;
+            $isStaffOrder = $user?->canAccessDashboard() ?? false;
+        }
+
+        if (! $isStaffOrder) {
+            $verifiedRecently = ! empty($validated['phone']) && PhoneVerification::where('phone', $validated['phone'])
+                ->whereNotNull('verified_at')
+                ->where('verified_at', '>', now()->subMinutes(30))
+                ->exists();
+
+            if (! $verifiedRecently) {
+                throw ValidationException::withMessages([
+                    'phone' => 'Please verify your phone number before placing the order.',
+                ]);
+            }
+        }
 
         $order = DB::transaction(function () use ($validated) {
             $subtotal = collect($validated['items'])
