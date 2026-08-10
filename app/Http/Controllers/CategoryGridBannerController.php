@@ -31,6 +31,7 @@ class CategoryGridBannerController extends Controller
 
         return response()->json([
             'enabled' => $settings->category_grid_banner_enabled,
+            'heading' => $settings->category_grid_banner_heading,
             'categories' => $categories->map(fn (Category $c) => $categoryController->summarize($c))->values(),
         ]);
     }
@@ -44,6 +45,7 @@ class CategoryGridBannerController extends Controller
     {
         $validated = $request->validate([
             'enabled' => ['boolean'],
+            'heading' => ['nullable', 'string', 'max:255'],
             'categoryIds' => ['array'],
             'categoryIds.*' => ['integer', 'distinct', 'exists:categories,id'],
         ]);
@@ -51,6 +53,7 @@ class CategoryGridBannerController extends Controller
         $settings = StoreSetting::current();
         $settings->update([
             'category_grid_banner_enabled' => $validated['enabled'] ?? true,
+            'category_grid_banner_heading' => $validated['heading'] ?? null,
         ]);
 
         DB::transaction(function () use ($validated) {
