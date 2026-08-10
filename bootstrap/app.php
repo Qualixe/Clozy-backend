@@ -26,6 +26,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // This is an API-only backend — there is no web "login" route to
         // redirect guests to, so never attempt one.
         $middleware->redirectGuestsTo(fn () => null);
+
+        // Behind Cloudflare / a reverse proxy that terminates HTTPS and
+        // forwards plain HTTP internally — without this, Laravel thinks
+        // every request is insecure and generates http:// URLs (url(),
+        // asset()), which browsers on the HTTPS frontend block as mixed
+        // content (e.g. media file URLs, favicons).
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
