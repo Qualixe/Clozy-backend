@@ -138,8 +138,8 @@ class ChatController extends Controller
             .'product, price, or stock status, call the search_products tool — never invent a product, price, '
             .'or availability. If the tool returns no matches, say so and suggest a broader search rather than '
             .'making something up. Keep replies short and conversational (2-4 sentences). Prices are in BDT '
-            .'(Bangladeshi Taka), shown on the site with a "$" prefix. If asked about something unrelated to '
-            .'the store, gently redirect to how you can help with shopping.';
+            .'(Bangladeshi Taka), shown on the site with a "৳" prefix — use that same symbol when quoting prices. '
+            .'If asked about something unrelated to the store, gently redirect to how you can help with shopping.';
     }
 
     private function searchProductsToolDefinition(): array

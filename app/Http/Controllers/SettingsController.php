@@ -49,6 +49,7 @@ class SettingsController extends Controller
             'emailLogoUrl' => ['nullable', 'string', 'max:2048'],
             'emailAccentColor' => ['nullable', 'string', 'max:32'],
             'emailFooterText' => ['nullable', 'string', 'max:500'],
+            'categoryShowcaseHeading' => ['nullable', 'string', 'max:255'],
             'footerTagline' => ['nullable', 'string', 'max:500'],
             'footerInstagramUrl' => ['nullable', 'string', 'max:2048'],
             'footerTwitterUrl' => ['nullable', 'string', 'max:2048'],
@@ -79,6 +80,7 @@ class SettingsController extends Controller
             'email_logo_url' => $validated['emailLogoUrl'] ?? null,
             'email_accent_color' => $validated['emailAccentColor'] ?? null,
             'email_footer_text' => $validated['emailFooterText'] ?? null,
+            'category_showcase_heading' => $validated['categoryShowcaseHeading'] ?? null,
             'footer_tagline' => $validated['footerTagline'] ?? null,
             'footer_instagram_url' => $validated['footerInstagramUrl'] ?? null,
             'footer_twitter_url' => $validated['footerTwitterUrl'] ?? null,
@@ -103,6 +105,7 @@ class SettingsController extends Controller
             // page, so its URL is fine to serve from the public endpoint.
             'logoUrl' => $settings->logo_url,
             'faviconUrl' => $settings->favicon_url,
+            'categoryShowcaseHeading' => $settings->category_showcase_heading,
             'footerTagline' => $settings->footer_tagline,
             'footerInstagramUrl' => $settings->footer_instagram_url,
             'footerTwitterUrl' => $settings->footer_twitter_url,
