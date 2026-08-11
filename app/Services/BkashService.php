@@ -55,7 +55,12 @@ class BkashService
 
         $body = $response->json();
 
-        if (! $response->successful() || empty($body['paymentID']) || empty($body['bkashURL'])) {
+        // Belt-and-braces, same lesson learned from BulkSMSBD: don't trust
+        // the HTTP status alone if the API also returns its own status
+        // code — require both, when statusCode is present at all.
+        $statusOk = ! isset($body['statusCode']) || $body['statusCode'] === '0000';
+
+        if (! $response->successful() || ! $statusOk || empty($body['paymentID']) || empty($body['bkashURL'])) {
             throw new RuntimeException($body['statusMessage'] ?? 'bKash rejected the payment request: '.substr((string) $response->body(), 0, 500));
         }
 
@@ -74,8 +79,9 @@ class BkashService
 
         $body = $response->json();
         $status = $body['transactionStatus'] ?? null;
+        $statusOk = ! isset($body['statusCode']) || $body['statusCode'] === '0000';
 
-        if (! $response->successful() || $status !== 'Completed') {
+        if (! $response->successful() || ! $statusOk || $status !== 'Completed') {
             throw new RuntimeException($body['statusMessage'] ?? 'Payment could not be confirmed.');
         }
 
