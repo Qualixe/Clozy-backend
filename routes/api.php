@@ -21,6 +21,7 @@ use App\Http\Controllers\PromoBannerController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SmsController;
+use App\Http\Controllers\SubscriberController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VideoSectionController;
 use Illuminate\Support\Facades\Route;
@@ -116,6 +117,8 @@ Route::post('/checkout/phone/verify-code', [PhoneVerificationController::class, 
 
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 
+Route::post('/subscribers', [SubscriberController::class, 'store'])->middleware('throttle:5,1');
+
 Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
 
 Route::post('/chat', [ChatController::class, 'send']);
@@ -149,6 +152,8 @@ Route::middleware(['auth:sanctum', 'permission:manage_orders'])->group(function 
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::post('/orders/{id}/ship', [CourierController::class, 'send']);
     Route::get('/orders/{id}/tracking', [CourierController::class, 'refreshStatus']);
+    Route::get('/courier/pathao/cities', [CourierController::class, 'pathaoCities']);
+    Route::get('/courier/pathao/cities/{cityId}/zones', [CourierController::class, 'pathaoZones']);
 });
 
 Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function () {
@@ -198,6 +203,9 @@ Route::middleware(['auth:sanctum', 'permission:manage_settings'])->group(functio
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
     Route::get('/courier/balance', [CourierController::class, 'balance']);
+    Route::get('/courier/pathao/stores', [CourierController::class, 'pathaoStores']);
+    Route::get('/subscribers', [SubscriberController::class, 'index']);
+    Route::delete('/subscribers/{id}', [SubscriberController::class, 'destroy']);
 });
 
 Route::middleware(['auth:sanctum', 'permission:view_sms'])->group(function () {

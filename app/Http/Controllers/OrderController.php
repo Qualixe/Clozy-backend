@@ -288,9 +288,10 @@ class OrderController extends Controller
             'discountCode' => $order->discount_code,
             'discountAmount' => (float) $order->discount_amount,
             'bkashNumber' => $order->bkash_number,
-            'steadfastConsignmentId' => $order->steadfast_consignment_id,
-            'steadfastTrackingCode' => $order->steadfast_tracking_code,
-            'steadfastStatus' => $order->steadfast_status,
+            'courier' => $order->courier,
+            'courierConsignmentId' => $order->courier_consignment_id,
+            'courierTrackingCode' => $order->courier_tracking_code,
+            'courierStatus' => $order->courier_status,
             'items' => $order->items->map(fn ($item) => [
                 'id' => (string) $item->id,
                 'name' => $item->name,
