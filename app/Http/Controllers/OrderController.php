@@ -197,6 +197,11 @@ class OrderController extends Controller
                 'discount_amount' => $discountAmount,
                 'total' => max(0, $subtotal + $shipping - $discountAmount),
                 'payment_method' => $validated['paymentMethod'],
+                // Storefront bKash orders are settled through the real
+                // gateway (see BkashController) — pending until the
+                // customer completes payment there. Staff-created/COD/cash
+                // orders have no such step, so payment_status stays null.
+                'payment_status' => (! $isStaffOrder && $validated['paymentMethod'] === 'bkash') ? 'pending' : null,
                 'bkash_number' => $validated['paymentMethod'] === 'bkash'
                     ? ($validated['bkashNumber'] ?? null)
                     : null,
@@ -221,7 +226,12 @@ class OrderController extends Controller
 
         // Best-effort and after the transaction commits — a gateway hiccup
         // must never roll back or fail an otherwise-successful order.
-        $this->sms->sendOrderConfirmation($order);
+        // Storefront bKash orders aren't confirmed yet at this point — that
+        // SMS fires from BkashController::callback() once payment actually
+        // succeeds, to avoid confirming an order nobody has paid for.
+        if ($order->payment_status !== 'pending') {
+            $this->sms->sendOrderConfirmation($order);
+        }
 
         return response()->json($this->detail($order->load('items')), 201);
     }
@@ -271,6 +281,7 @@ class OrderController extends Controller
                 'cash' => 'Cash',
                 default => 'COD',
             },
+            'paymentStatus' => $order->payment_status,
             'total' => (float) $order->total,
             'date' => $order->created_at->format('Y-m-d'),
         ];
@@ -288,6 +299,7 @@ class OrderController extends Controller
             'discountCode' => $order->discount_code,
             'discountAmount' => (float) $order->discount_amount,
             'bkashNumber' => $order->bkash_number,
+            'paymentStatus' => $order->payment_status,
             'courier' => $order->courier,
             'courierConsignmentId' => $order->courier_consignment_id,
             'courierTrackingCode' => $order->courier_tracking_code,

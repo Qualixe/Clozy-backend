@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\StoreSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
 {
@@ -28,6 +29,8 @@ class SettingsController extends Controller
     public function update(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'insideDhakaRate' => ['nullable', 'numeric', 'min:0'],
+            'outsideDhakaRate' => ['nullable', 'numeric', 'min:0'],
             'facebookPixelId' => ['nullable', 'string', 'max:255'],
             'googleAnalyticsId' => ['nullable', 'string', 'max:255'],
             'googleTagManagerId' => ['nullable', 'string', 'max:255'],
@@ -50,6 +53,12 @@ class SettingsController extends Controller
             'pathaoUsername' => ['nullable', 'string', 'max:255'],
             'pathaoPassword' => ['nullable', 'string', 'max:255'],
             'pathaoStoreId' => ['nullable', 'string', 'max:255'],
+            'bkashGatewayEnabled' => ['boolean'],
+            'bkashBaseUrl' => ['nullable', 'string', 'max:255'],
+            'bkashAppKey' => ['nullable', 'string', 'max:255'],
+            'bkashAppSecret' => ['nullable', 'string', 'max:255'],
+            'bkashUsername' => ['nullable', 'string', 'max:255'],
+            'bkashPassword' => ['nullable', 'string', 'max:255'],
             'anthropicApiKey' => ['nullable', 'string', 'max:255'],
             'logoUrl' => ['nullable', 'string', 'max:2048'],
             'faviconUrl' => ['nullable', 'string', 'max:2048'],
@@ -64,8 +73,18 @@ class SettingsController extends Controller
             'footerYoutubeUrl' => ['nullable', 'string', 'max:2048'],
         ]);
 
+        // Only one courier can be active at a time — an order should never
+        // be ambiguous about where it's shipped from.
+        if (($validated['steadfastEnabled'] ?? false) && ($validated['pathaoEnabled'] ?? false)) {
+            throw ValidationException::withMessages([
+                'pathaoEnabled' => 'Only one shipping courier can be enabled at a time — disable Steadfast first.',
+            ]);
+        }
+
         $settings = StoreSetting::current();
         $settings->update([
+            'inside_dhaka_rate' => $validated['insideDhakaRate'] ?? 0,
+            'outside_dhaka_rate' => $validated['outsideDhakaRate'] ?? 0,
             'facebook_pixel_id' => $validated['facebookPixelId'] ?? null,
             'google_analytics_id' => $validated['googleAnalyticsId'] ?? null,
             'google_tag_manager_id' => $validated['googleTagManagerId'] ?? null,
@@ -92,6 +111,16 @@ class SettingsController extends Controller
             'pathao_access_token' => null,
             'pathao_refresh_token' => null,
             'pathao_token_expires_at' => null,
+            'bkash_gateway_enabled' => $validated['bkashGatewayEnabled'] ?? false,
+            'bkash_base_url' => $validated['bkashBaseUrl'] ?? null,
+            'bkash_app_key' => $validated['bkashAppKey'] ?? null,
+            'bkash_app_secret' => $validated['bkashAppSecret'] ?? null,
+            'bkash_username' => $validated['bkashUsername'] ?? null,
+            'bkash_password' => $validated['bkashPassword'] ?? null,
+            // Credentials just changed — any cached token is stale.
+            'bkash_id_token' => null,
+            'bkash_refresh_token' => null,
+            'bkash_token_expires_at' => null,
             'anthropic_api_key' => $validated['anthropicApiKey'] ?? null,
             'logo_url' => $validated['logoUrl'] ?? null,
             'favicon_url' => $validated['faviconUrl'] ?? null,
@@ -112,6 +141,8 @@ class SettingsController extends Controller
     private function summarizePublic(StoreSetting $settings): array
     {
         return [
+            'insideDhakaRate' => (float) $settings->inside_dhaka_rate,
+            'outsideDhakaRate' => (float) $settings->outside_dhaka_rate,
             'facebookPixelId' => $settings->facebook_pixel_id,
             'googleAnalyticsId' => $settings->google_analytics_id,
             'googleTagManagerId' => $settings->google_tag_manager_id,
@@ -157,6 +188,12 @@ class SettingsController extends Controller
             'pathaoUsername' => $settings->pathao_username,
             'pathaoPassword' => $settings->pathao_password,
             'pathaoStoreId' => $settings->pathao_store_id,
+            'bkashGatewayEnabled' => $settings->bkash_gateway_enabled,
+            'bkashBaseUrl' => $settings->bkash_base_url,
+            'bkashAppKey' => $settings->bkash_app_key,
+            'bkashAppSecret' => $settings->bkash_app_secret,
+            'bkashUsername' => $settings->bkash_username,
+            'bkashPassword' => $settings->bkash_password,
             'anthropicApiKey' => $settings->anthropic_api_key,
             'anthropicConfigured' => $settings->anthropic_api_key !== null,
         ];

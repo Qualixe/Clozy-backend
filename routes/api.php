@@ -3,6 +3,7 @@
 use App\Http\Controllers\AboutPageController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BkashController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGridBannerController;
 use App\Http\Controllers\ChatController;
@@ -114,6 +115,10 @@ Route::post('/orders/track', [OrderController::class, 'track']);
 // Checkout's fake-order-protection step — see PhoneVerificationController.
 Route::post('/checkout/phone/send-code', [PhoneVerificationController::class, 'sendCode']);
 Route::post('/checkout/phone/verify-code', [PhoneVerificationController::class, 'verifyCode']);
+
+// bKash payment gateway — see BkashController.
+Route::post('/orders/{id}/bkash/create-payment', [BkashController::class, 'create']);
+Route::get('/checkout/bkash/callback', [BkashController::class, 'callback'])->name('bkash.callback');
 
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
 
