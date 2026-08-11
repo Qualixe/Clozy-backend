@@ -150,7 +150,7 @@ class OrderController extends Controller
             }
         }
 
-        $order = DB::transaction(function () use ($validated) {
+        $order = DB::transaction(function () use ($validated, $isStaffOrder) {
             $subtotal = collect($validated['items'])
                 ->sum(fn ($item) => $item['price'] * $item['qty']);
             $shipping = (float) ($validated['shippingCost'] ?? 0);
