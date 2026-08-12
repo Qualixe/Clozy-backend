@@ -62,6 +62,9 @@ class DiscountController extends Controller
         $validated = $request->validate([
             'code' => ['required', 'string'],
             'subtotal' => ['required', 'numeric', 'min:0'],
+            'items' => ['array'],
+            'items.*.price' => ['required_with:items', 'numeric', 'min:0'],
+            'items.*.qty' => ['required_with:items', 'integer', 'min:1'],
         ]);
 
         $discount = Discount::findByCode($validated['code']);
@@ -76,13 +79,37 @@ class DiscountController extends Controller
             return response()->json(['message' => $error], 422);
         }
 
+        if ($discount->isBogo()) {
+            $items = $validated['items'] ?? [];
+            $amountOff = $discount->bogoAmountOff($items);
+
+            if ($amountOff <= 0) {
+                return response()->json([
+                    'message' => $this->bogoShortfallMessage($discount, $items),
+                ], 422);
+            }
+        } else {
+            $amountOff = $discount->amountOff((float) $validated['subtotal']);
+        }
+
         return response()->json([
             'code' => $discount->code,
             'type' => $discount->type,
             'value' => $discount->value !== null ? (float) $discount->value : null,
-            'amountOff' => $discount->amountOff((float) $validated['subtotal']),
+            'buyQty' => $discount->buy_qty,
+            'getQty' => $discount->get_qty,
+            'amountOff' => $amountOff,
             'freeShipping' => $discount->isFreeShipping(),
         ]);
+    }
+
+    private function bogoShortfallMessage(Discount $discount, array $items): string
+    {
+        $groupSize = $discount->bogoGroupSize();
+        $totalUnits = array_sum(array_map(fn ($item) => max(0, (int) ($item['qty'] ?? 0)), $items));
+        $needed = max(1, $groupSize - $totalUnits);
+
+        return "Buy {$discount->buy_qty}, get {$discount->get_qty} free — add {$needed} more item(s) to your cart to use this code.";
     }
 
     private function validated(Request $request, ?int $ignoreId = null): array
@@ -94,8 +121,10 @@ class DiscountController extends Controller
                 'max:50',
                 Rule::unique('discounts', 'code')->ignore($ignoreId),
             ],
-            'type' => ['required', 'in:percentage,fixed,free_shipping'],
-            'value' => ['required_unless:type,free_shipping', 'nullable', 'numeric', 'min:0'],
+            'type' => ['required', 'in:percentage,fixed,free_shipping,bogo'],
+            'value' => ['required_unless:type,free_shipping,bogo', 'nullable', 'numeric', 'min:0'],
+            'buyQty' => ['required_if:type,bogo', 'nullable', 'integer', 'min:1'],
+            'getQty' => ['required_if:type,bogo', 'nullable', 'integer', 'min:1'],
             'minSubtotal' => ['nullable', 'numeric', 'min:0'],
             'usageLimit' => ['nullable', 'integer', 'min:1'],
             'startsAt' => ['nullable', 'date'],
@@ -106,7 +135,9 @@ class DiscountController extends Controller
         return [
             'code' => Str::upper(trim($validated['code'])),
             'type' => $validated['type'],
-            'value' => $validated['type'] === 'free_shipping' ? null : $validated['value'],
+            'value' => in_array($validated['type'], ['free_shipping', 'bogo'], true) ? null : $validated['value'],
+            'buy_qty' => $validated['type'] === 'bogo' ? $validated['buyQty'] : null,
+            'get_qty' => $validated['type'] === 'bogo' ? $validated['getQty'] : null,
             'min_subtotal' => $validated['minSubtotal'] ?? null,
             'usage_limit' => $validated['usageLimit'] ?? null,
             'starts_at' => $validated['startsAt'] ?? null,
@@ -122,6 +153,8 @@ class DiscountController extends Controller
             'code' => $discount->code,
             'type' => $discount->type,
             'value' => $discount->value !== null ? (float) $discount->value : null,
+            'buyQty' => $discount->buy_qty,
+            'getQty' => $discount->get_qty,
             'minSubtotal' => $discount->min_subtotal !== null ? (float) $discount->min_subtotal : null,
             'usageLimit' => $discount->usage_limit,
             'usedCount' => $discount->used_count,

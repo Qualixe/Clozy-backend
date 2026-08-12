@@ -177,6 +177,17 @@ class OrderController extends Controller
 
                 if ($discount->isFreeShipping()) {
                     $shipping = 0.0;
+                } elseif ($discount->isBogo()) {
+                    $discountAmount = $discount->bogoAmountOff($validated['items']);
+                    if ($discountAmount <= 0) {
+                        $groupSize = $discount->bogoGroupSize();
+                        $totalUnits = collect($validated['items'])->sum(fn ($item) => (int) $item['qty']);
+                        $needed = max(1, $groupSize - $totalUnits);
+
+                        throw ValidationException::withMessages([
+                            'discountCode' => "Buy {$discount->buy_qty}, get {$discount->get_qty} free — add {$needed} more item(s) to your cart to use this code.",
+                        ]);
+                    }
                 } else {
                     $discountAmount = $discount->amountOff($subtotal);
                 }
