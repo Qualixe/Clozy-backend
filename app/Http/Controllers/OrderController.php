@@ -134,7 +134,16 @@ class OrderController extends Controller
         $isStaffOrder = false;
         if ($bearerToken = $request->bearerToken()) {
             $user = PersonalAccessToken::findToken($bearerToken)?->tokenable;
-            $isStaffOrder = $user?->canAccessDashboard() ?? false;
+
+            if ($user?->canAccessDashboard()) {
+                if (! $user->can('create_orders')) {
+                    return response()->json([
+                        'message' => "You don't have permission to create orders.",
+                    ], 403);
+                }
+
+                $isStaffOrder = true;
+            }
         }
 
         if (! $isStaffOrder) {
