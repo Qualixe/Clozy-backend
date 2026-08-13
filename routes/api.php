@@ -133,15 +133,19 @@ Route::post('/chat', [ChatController::class, 'send']);
 // role → permission mapping)
 // ---------------------------------------------------------------------------
 
-Route::middleware(['auth:sanctum', 'permission:manage_products'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:create_products'])->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_products'])->group(function () {
     Route::get('/products/{id}/edit', [ProductController::class, 'edit']);
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_categories'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:create_categories'])->group(function () {
     Route::post('/categories', [CategoryController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_categories'])->group(function () {
     Route::put('/categories/reorder', [CategoryController::class, 'reorder']);
     Route::put('/categories/{id}', [CategoryController::class, 'update']);
     Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
@@ -165,38 +169,50 @@ Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function
     Route::post('/analytics/ai-insights', [AnalyticsController::class, 'aiInsights']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_menus'])->group(function () {
-    Route::get('/menus', [MenuController::class, 'index']);
+Route::middleware(['auth:sanctum', 'permission:create_menus'])->group(function () {
     Route::post('/menus', [MenuController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:view_menus|create_menus|edit_menus'])->group(function () {
+    Route::get('/menus', [MenuController::class, 'index']);
     Route::get('/menus/{id}', [MenuController::class, 'show']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_menus'])->group(function () {
     Route::put('/menus/{id}', [MenuController::class, 'update']);
     Route::delete('/menus/{id}', [MenuController::class, 'destroy']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_cms_pages'])->group(function () {
-    Route::get('/policies', [PolicyController::class, 'index']);
+Route::middleware(['auth:sanctum', 'permission:create_cms_pages'])->group(function () {
     Route::post('/policies', [PolicyController::class, 'store']);
+    Route::post('/faqs', [FaqController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:view_cms_pages|create_cms_pages|edit_cms_pages'])->group(function () {
+    Route::get('/policies', [PolicyController::class, 'index']);
     Route::get('/policies/{id}', [PolicyController::class, 'show']);
+    Route::get('/faqs', [FaqController::class, 'index']);
+    Route::get('/faqs/{id}', [FaqController::class, 'show']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_cms_pages'])->group(function () {
     Route::put('/policies/{id}', [PolicyController::class, 'update']);
     Route::delete('/policies/{id}', [PolicyController::class, 'destroy']);
 
-    Route::get('/faqs', [FaqController::class, 'index']);
-    Route::post('/faqs', [FaqController::class, 'store']);
     Route::put('/faqs/reorder', [FaqController::class, 'reorder']);
-    Route::get('/faqs/{id}', [FaqController::class, 'show']);
     Route::put('/faqs/{id}', [FaqController::class, 'update']);
     Route::delete('/faqs/{id}', [FaqController::class, 'destroy']);
 
     Route::put('/about-page', [AboutPageController::class, 'update']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_media'])->group(function () {
-    Route::get('/media', [MediaController::class, 'index']);
+Route::middleware(['auth:sanctum', 'permission:create_media'])->group(function () {
     Route::post('/media', [MediaController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:view_media|create_media|edit_media'])->group(function () {
+    Route::get('/media', [MediaController::class, 'index']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_media'])->group(function () {
     Route::delete('/media/{id}', [MediaController::class, 'destroy']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_theme'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:edit_theme'])->group(function () {
     Route::put('/hero-slides', [HeroSlideController::class, 'update']);
     Route::put('/new-arrivals', [NewArrivalsController::class, 'update']);
     Route::put('/video-section', [VideoSectionController::class, 'update']);
@@ -221,9 +237,13 @@ Route::middleware(['auth:sanctum', 'permission:manage_sms'])->group(function () 
     Route::post('/sms/promotional', [SmsController::class, 'sendPromotional']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_discounts'])->group(function () {
-    Route::get('/discounts', [DiscountController::class, 'index']);
+Route::middleware(['auth:sanctum', 'permission:create_discounts'])->group(function () {
     Route::post('/discounts', [DiscountController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:view_discounts|create_discounts|edit_discounts'])->group(function () {
+    Route::get('/discounts', [DiscountController::class, 'index']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_discounts'])->group(function () {
     Route::put('/discounts/{id}', [DiscountController::class, 'update']);
     Route::delete('/discounts/{id}', [DiscountController::class, 'destroy']);
 });
@@ -231,15 +251,19 @@ Route::middleware(['auth:sanctum', 'permission:manage_discounts'])->group(functi
 Route::middleware(['auth:sanctum', 'permission:view_reviews'])->group(function () {
     Route::get('/reviews', [ReviewController::class, 'index']);
 });
-Route::middleware(['auth:sanctum', 'permission:manage_reviews'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:edit_reviews'])->group(function () {
     Route::patch('/reviews/{id}/status', [ReviewController::class, 'updateStatus']);
     Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:manage_staff'])->group(function () {
+Route::middleware(['auth:sanctum', 'permission:create_staff'])->group(function () {
+    Route::post('/users', [UserController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:view_staff|create_staff|edit_staff'])->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/{id}', [UserController::class, 'show']);
-    Route::post('/users', [UserController::class, 'store']);
+});
+Route::middleware(['auth:sanctum', 'permission:edit_staff'])->group(function () {
     Route::put('/users/{id}', [UserController::class, 'update']);
     Route::delete('/users/{id}', [UserController::class, 'destroy']);
 });
