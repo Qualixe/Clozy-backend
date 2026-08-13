@@ -228,9 +228,13 @@ class OrderController extends Controller
                         'paymentMethod' => 'This payment method is not available.',
                     ]);
                 }
-                $advanceAmount = $settings->bkash_partial_advance_mode === 'fixed'
-                    ? min((float) $settings->bkash_partial_advance_fixed_amount, $total)
-                    : round($total * ((float) $settings->bkash_partial_advance_percent / 100), 2);
+                // The advance is the full shipping fee plus a portion of the
+                // product price — not a percentage of the whole order — so
+                // shipping is always covered upfront and the rest is COD.
+                $productPortion = $settings->bkash_partial_advance_mode === 'fixed'
+                    ? (float) $settings->bkash_partial_advance_fixed_amount
+                    : round($subtotal * ((float) $settings->bkash_partial_advance_percent / 100), 2);
+                $advanceAmount = min(round($shipping, 2) + $productPortion, $total);
             }
 
             // Nothing to charge online — e.g. shipping-fee-advance on a free
