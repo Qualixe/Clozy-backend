@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Discount;
 use App\Models\Order;
 use App\Models\PhoneVerification;
+use App\Models\StoreSetting;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -112,7 +113,7 @@ class OrderController extends Controller
             'email' => ['nullable', 'email', 'max:255'],
             'address' => ['nullable', 'string'],
             'district' => ['nullable', 'string', 'max:255'],
-            'paymentMethod' => ['required', 'in:cod,bkash,cash'],
+            'paymentMethod' => ['required', 'in:cod,bkash,cash,bkash_shipping_advance,bkash_partial_advance'],
             'bkashNumber' => ['nullable', 'string', 'max:32'],
             'shippingCost' => ['nullable', 'numeric', 'min:0'],
             'discountCode' => ['nullable', 'string'],
@@ -204,6 +205,42 @@ class OrderController extends Controller
                 $discount->increment('used_count');
             }
 
+            $total = max(0, $subtotal + $shipping - $discountAmount);
+
+            // The two hybrid methods charge part of the order via bKash now
+            // and leave the rest for the courier to collect on delivery —
+            // see Order::codAmountDue()/onlineAmountDue(). Computed here
+            // (not trusted from the client) so the amount actually charged
+            // matches what the store owner configured.
+            $advanceAmount = null;
+            if ($validated['paymentMethod'] === 'bkash_shipping_advance') {
+                $settings = StoreSetting::current();
+                if (! $settings->bkash_shipping_advance_enabled) {
+                    throw ValidationException::withMessages([
+                        'paymentMethod' => 'This payment method is not available.',
+                    ]);
+                }
+                $advanceAmount = round($shipping, 2);
+            } elseif ($validated['paymentMethod'] === 'bkash_partial_advance') {
+                $settings = StoreSetting::current();
+                if (! $settings->bkash_partial_advance_enabled) {
+                    throw ValidationException::withMessages([
+                        'paymentMethod' => 'This payment method is not available.',
+                    ]);
+                }
+                $advanceAmount = $settings->bkash_partial_advance_mode === 'fixed'
+                    ? min((float) $settings->bkash_partial_advance_fixed_amount, $total)
+                    : round($total * ((float) $settings->bkash_partial_advance_percent / 100), 2);
+            }
+
+            // Nothing to charge online — e.g. shipping-fee-advance on a free
+            // shipping order — so there's no bKash step to wait on.
+            $requiresOnlinePayment = match ($validated['paymentMethod']) {
+                'bkash' => true,
+                'bkash_shipping_advance', 'bkash_partial_advance' => $advanceAmount > 0,
+                default => false,
+            };
+
             $order = Order::create([
                 'order_number' => $this->nextOrderNumber(),
                 'customer_name' => $validated['name'],
@@ -215,13 +252,15 @@ class OrderController extends Controller
                 'shipping_cost' => $shipping,
                 'discount_code' => $discount?->code,
                 'discount_amount' => $discountAmount,
-                'total' => max(0, $subtotal + $shipping - $discountAmount),
+                'total' => $total,
+                'advance_amount' => $advanceAmount,
                 'payment_method' => $validated['paymentMethod'],
-                // Storefront bKash orders are settled through the real
-                // gateway (see BkashController) — pending until the
+                // Storefront bKash-family orders are settled through the
+                // real gateway (see BkashController) — pending until the
                 // customer completes payment there. Staff-created/COD/cash
-                // orders have no such step, so payment_status stays null.
-                'payment_status' => (! $isStaffOrder && $validated['paymentMethod'] === 'bkash') ? 'pending' : null,
+                // orders (and hybrid orders with nothing due online) have
+                // no such step, so payment_status stays null.
+                'payment_status' => (! $isStaffOrder && $requiresOnlinePayment) ? 'pending' : null,
                 'bkash_number' => $validated['paymentMethod'] === 'bkash'
                     ? ($validated['bkashNumber'] ?? null)
                     : null,
@@ -299,6 +338,8 @@ class OrderController extends Controller
             'payment' => match ($order->payment_method) {
                 'bkash' => 'bKash',
                 'cash' => 'Cash',
+                'bkash_shipping_advance' => 'bKash (Shipping Advance)',
+                'bkash_partial_advance' => 'bKash (Advance Payment)',
                 default => 'COD',
             },
             'paymentStatus' => $order->payment_status,
@@ -318,6 +359,8 @@ class OrderController extends Controller
             'shippingCost' => (float) $order->shipping_cost,
             'discountCode' => $order->discount_code,
             'discountAmount' => (float) $order->discount_amount,
+            'advanceAmount' => $order->advance_amount !== null ? (float) $order->advance_amount : null,
+            'codAmountDue' => $order->codAmountDue(),
             'bkashNumber' => $order->bkash_number,
             'paymentStatus' => $order->payment_status,
             'courier' => $order->courier,

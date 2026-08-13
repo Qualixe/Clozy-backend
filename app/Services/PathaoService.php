@@ -86,7 +86,7 @@ class PathaoService
             'special_instruction' => 'Clozy order #'.$order->order_number,
             'item_quantity' => max(1, $order->items()->count()),
             'item_weight' => 0.5,
-            'amount_to_collect' => $order->payment_method === 'cod' ? (float) $order->total : 0,
+            'amount_to_collect' => $order->codAmountDue(),
             'item_description' => 'Clozy order #'.$order->order_number,
         ]);
 

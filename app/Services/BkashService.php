@@ -47,7 +47,7 @@ class BkashService
             'mode' => '0011',
             'payerReference' => $order->customer_phone ?: $order->order_number,
             'callbackURL' => $callbackUrl,
-            'amount' => number_format((float) $order->total, 2, '.', ''),
+            'amount' => number_format($order->onlineAmountDue(), 2, '.', ''),
             'currency' => 'BDT',
             'intent' => 'sale',
             'merchantInvoiceNumber' => $order->order_number,

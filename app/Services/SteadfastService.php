@@ -50,7 +50,7 @@ class SteadfastService
             'recipient_name' => $order->customer_name,
             'recipient_phone' => $order->customer_phone,
             'recipient_address' => trim(collect([$order->address, $order->district])->filter()->implode(', ')),
-            'cod_amount' => $order->payment_method === 'cod' ? (float) $order->total : 0,
+            'cod_amount' => $order->codAmountDue(),
             'note' => 'Clozy order #'.$order->order_number,
         ]);
 

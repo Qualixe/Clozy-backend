@@ -27,7 +27,7 @@ class BkashController extends Controller
     {
         $order = Order::find($id);
 
-        if (! $order || $order->payment_method !== 'bkash') {
+        if (! $order || ! $order->isBkashFamily()) {
             return response()->json(['message' => 'Order not found'], 404);
         }
 

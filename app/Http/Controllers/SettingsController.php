@@ -31,6 +31,7 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'insideDhakaRate' => ['nullable', 'numeric', 'min:0'],
             'outsideDhakaRate' => ['nullable', 'numeric', 'min:0'],
+            'codEnabled' => ['boolean'],
             'facebookPixelId' => ['nullable', 'string', 'max:255'],
             'googleAnalyticsId' => ['nullable', 'string', 'max:255'],
             'googleTagManagerId' => ['nullable', 'string', 'max:255'],
@@ -59,6 +60,11 @@ class SettingsController extends Controller
             'bkashAppSecret' => ['nullable', 'string', 'max:255'],
             'bkashUsername' => ['nullable', 'string', 'max:255'],
             'bkashPassword' => ['nullable', 'string', 'max:255'],
+            'bkashShippingAdvanceEnabled' => ['boolean'],
+            'bkashPartialAdvanceEnabled' => ['boolean'],
+            'bkashPartialAdvanceMode' => ['required_if:bkashPartialAdvanceEnabled,true', 'nullable', 'in:percentage,fixed'],
+            'bkashPartialAdvancePercent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'bkashPartialAdvanceFixedAmount' => ['nullable', 'numeric', 'min:0'],
             'anthropicApiKey' => ['nullable', 'string', 'max:255'],
             'logoUrl' => ['nullable', 'string', 'max:2048'],
             'faviconUrl' => ['nullable', 'string', 'max:2048'],
@@ -81,10 +87,22 @@ class SettingsController extends Controller
             ]);
         }
 
+        // The advance-payment methods charge through the bKash gateway —
+        // meaningless (and unusable at checkout) without it configured.
+        if (
+            (($validated['bkashShippingAdvanceEnabled'] ?? false) || ($validated['bkashPartialAdvanceEnabled'] ?? false))
+            && ! ($validated['bkashGatewayEnabled'] ?? false)
+        ) {
+            throw ValidationException::withMessages([
+                'bkashGatewayEnabled' => 'Enable the bKash Payment Gateway before turning on a bKash advance-payment method.',
+            ]);
+        }
+
         $settings = StoreSetting::current();
         $settings->update([
             'inside_dhaka_rate' => $validated['insideDhakaRate'] ?? 0,
             'outside_dhaka_rate' => $validated['outsideDhakaRate'] ?? 0,
+            'cod_enabled' => $validated['codEnabled'] ?? false,
             'facebook_pixel_id' => $validated['facebookPixelId'] ?? null,
             'google_analytics_id' => $validated['googleAnalyticsId'] ?? null,
             'google_tag_manager_id' => $validated['googleTagManagerId'] ?? null,
@@ -121,6 +139,11 @@ class SettingsController extends Controller
             'bkash_id_token' => null,
             'bkash_refresh_token' => null,
             'bkash_token_expires_at' => null,
+            'bkash_shipping_advance_enabled' => $validated['bkashShippingAdvanceEnabled'] ?? false,
+            'bkash_partial_advance_enabled' => $validated['bkashPartialAdvanceEnabled'] ?? false,
+            'bkash_partial_advance_mode' => $validated['bkashPartialAdvanceMode'] ?? 'percentage',
+            'bkash_partial_advance_percent' => $validated['bkashPartialAdvancePercent'] ?? 20,
+            'bkash_partial_advance_fixed_amount' => $validated['bkashPartialAdvanceFixedAmount'] ?? null,
             'anthropic_api_key' => $validated['anthropicApiKey'] ?? null,
             'logo_url' => $validated['logoUrl'] ?? null,
             'favicon_url' => $validated['faviconUrl'] ?? null,
@@ -143,6 +166,18 @@ class SettingsController extends Controller
         return [
             'insideDhakaRate' => (float) $settings->inside_dhaka_rate,
             'outsideDhakaRate' => (float) $settings->outside_dhaka_rate,
+            // Booleans/numbers only — checkout needs these to know which
+            // payment methods to offer. No credentials here; those stay
+            // admin-only (see summarizeAdmin()).
+            'codEnabled' => $settings->cod_enabled,
+            'bkashGatewayEnabled' => $settings->bkash_gateway_enabled,
+            'bkashShippingAdvanceEnabled' => $settings->bkash_shipping_advance_enabled,
+            'bkashPartialAdvanceEnabled' => $settings->bkash_partial_advance_enabled,
+            'bkashPartialAdvanceMode' => $settings->bkash_partial_advance_mode,
+            'bkashPartialAdvancePercent' => (float) $settings->bkash_partial_advance_percent,
+            'bkashPartialAdvanceFixedAmount' => $settings->bkash_partial_advance_fixed_amount !== null
+                ? (float) $settings->bkash_partial_advance_fixed_amount
+                : null,
             'facebookPixelId' => $settings->facebook_pixel_id,
             'googleAnalyticsId' => $settings->google_analytics_id,
             'googleTagManagerId' => $settings->google_tag_manager_id,
@@ -188,7 +223,6 @@ class SettingsController extends Controller
             'pathaoUsername' => $settings->pathao_username,
             'pathaoPassword' => $settings->pathao_password,
             'pathaoStoreId' => $settings->pathao_store_id,
-            'bkashGatewayEnabled' => $settings->bkash_gateway_enabled,
             'bkashBaseUrl' => $settings->bkash_base_url,
             'bkashAppKey' => $settings->bkash_app_key,
             'bkashAppSecret' => $settings->bkash_app_secret,
