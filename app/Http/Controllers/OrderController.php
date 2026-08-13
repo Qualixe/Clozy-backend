@@ -133,6 +133,7 @@ class OrderController extends Controller
         // bearer token instead — see CreateOrderDialog on the frontend,
         // which already sends one.
         $isStaffOrder = false;
+        $user = null;
         if ($bearerToken = $request->bearerToken()) {
             $user = PersonalAccessToken::findToken($bearerToken)?->tokenable;
 
@@ -148,10 +149,19 @@ class OrderController extends Controller
         }
 
         if (! $isStaffOrder) {
-            $verifiedRecently = ! empty($validated['phone']) && PhoneVerification::where('phone', $validated['phone'])
+            // A logged-in customer whose account phone is already verified
+            // (see AuthController::confirmPhone) doesn't need to redo the
+            // OTP flow, as long as the checkout number matches — otherwise
+            // fall back to the ephemeral PhoneVerification record.
+            $accountPhoneVerified = $user
+                && ! empty($validated['phone'])
+                && $user->phone === $validated['phone']
+                && $user->phone_verified_at !== null;
+
+            $verifiedRecently = $accountPhoneVerified || (! empty($validated['phone']) && PhoneVerification::where('phone', $validated['phone'])
                 ->whereNotNull('verified_at')
                 ->where('verified_at', '>', now()->subMinutes(30))
-                ->exists();
+                ->exists());
 
             if (! $verifiedRecently) {
                 throw ValidationException::withMessages([
