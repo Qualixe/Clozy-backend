@@ -70,6 +70,8 @@ class StoreSetting extends Model
         'category_grid_banner_enabled',
         'category_grid_banner_heading',
         'category_showcase_heading',
+        'meta_title',
+        'meta_description',
         'footer_tagline',
         'footer_instagram_url',
         'footer_twitter_url',
