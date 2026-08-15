@@ -78,8 +78,12 @@ class ProductController extends Controller
             ->map(fn (Product $p) => $this->summarize($p))
             ->values();
 
-        $colorOption = $product->options->firstWhere('name', 'Color');
-        $sizeOption = $product->options->firstWhere('name', 'Size');
+        // Case-insensitive: the dashboard lets admins type any option name
+        // free-text (see product-form.tsx, which only special-cases the
+        // color-swatch UI the same way) — an admin typing "size" or "Sizes"
+        // shouldn't make the whole Size selector vanish from the storefront.
+        $colorOption = $product->options->first(fn ($o) => strcasecmp(trim($o->name), 'Color') === 0);
+        $sizeOption = $product->options->first(fn ($o) => strcasecmp(trim($o->name), 'Size') === 0);
         $careDetails = $product->metafields->firstWhere('key', 'care_details');
 
         $images = $product->images->pluck('url')->values();
@@ -104,8 +108,20 @@ class ProductController extends Controller
             // Lets the storefront show the exact price/compare-at price for
             // whichever color+size combination is currently selected.
             'variants' => $product->variants->map(fn ($variant) => [
+                // Normalized to the canonical "Color"/"Size" keys the
+                // storefront reads by (see single-product.tsx) regardless
+                // of whatever case the admin actually typed the option
+                // name in — same reasoning as $colorOption/$sizeOption above.
                 'optionValues' => $variant->optionValues
-                    ->mapWithKeys(fn ($ov) => [$ov->option->name => $ov->value])
+                    ->mapWithKeys(function ($ov) use ($colorOption, $sizeOption) {
+                        if ($colorOption && $ov->option_id === $colorOption->id) {
+                            return ['Color' => $ov->value];
+                        }
+                        if ($sizeOption && $ov->option_id === $sizeOption->id) {
+                            return ['Size' => $ov->value];
+                        }
+                        return [$ov->option->name => $ov->value];
+                    })
                     ->all(),
                 'price' => (float) ($variant->price ?? $product->price ?? 0),
                 'compareAtPrice' => $variant->compare_at_price !== null

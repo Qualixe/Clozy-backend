@@ -401,9 +401,13 @@ class OrderController extends Controller
         }
 
         $variantLabel = trim((string) ($item['variant'] ?? ''));
+        // Case-insensitive, matching ProductController::show()'s
+        // $colorOption/$sizeOption detection — an admin-typed option name
+        // like "size" (not "Size") must resolve here the same way it does
+        // when the storefront builds the label in the first place.
         $variant = $product->variants->first(function ($variant) use ($variantLabel) {
-            $color = $variant->optionValues->firstWhere('option.name', 'Color')?->value;
-            $size = $variant->optionValues->firstWhere('option.name', 'Size')?->value;
+            $color = $variant->optionValues->first(fn ($ov) => strcasecmp(trim($ov->option->name), 'Color') === 0)?->value;
+            $size = $variant->optionValues->first(fn ($ov) => strcasecmp(trim($ov->option->name), 'Size') === 0)?->value;
             $label = collect([$color, $size])->filter()->implode(' / ');
 
             return $label === $variantLabel;
