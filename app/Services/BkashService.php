@@ -43,9 +43,9 @@ class BkashService
     /** Starts a payment session. Returns the paymentID and the URL to redirect the customer to. */
     public function create(Order $order, string $callbackUrl): array
     {
-        $response = $this->client()->post($this->url('/tokenized/checkout/create'), [
+        $response = $this->client()->post($this->url('/checkout/create'), [
             'mode' => '0011',
-            'payerReference' => $order->customer_phone ?: $order->order_number,
+            'payerReference' => $order->customer_phone ?? $order->order_number,
             'callbackURL' => $callbackUrl,
             'amount' => number_format($order->onlineAmountDue(), 2, '.', ''),
             'currency' => 'BDT',
@@ -73,7 +73,7 @@ class BkashService
     /** Confirms/captures a payment after the customer completes it on bKash's page. */
     public function execute(string $paymentId): array
     {
-        $response = $this->client()->post($this->url('/tokenized/checkout/execute'), [
+        $response = $this->client()->post($this->url('/checkout/execute'), [
             'paymentID' => $paymentId,
         ]);
 
@@ -121,7 +121,7 @@ class BkashService
             'username' => $s->bkash_username,
             'password' => $s->bkash_password,
             'Content-Type' => 'application/json',
-        ])->acceptJson()->timeout(15)->post($this->url('/tokenized/checkout/token/grant'), [
+        ])->acceptJson()->timeout(15)->post($this->url('/checkout/token/grant'), [
             'app_key' => $s->bkash_app_key,
             'app_secret' => $s->bkash_app_secret,
         ]);
