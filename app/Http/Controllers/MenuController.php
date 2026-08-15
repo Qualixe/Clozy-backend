@@ -192,7 +192,12 @@ class MenuController extends Controller
             'name' => $menu->name,
             'handle' => $menu->handle,
             'itemCount' => $menu->allItems()->count(),
-            'items' => $menu->items->map(fn (MenuItem $item) => $this->itemNode($item))->values(),
+            // `->all()` — showByHandle() caches this whole array, and a
+            // Collection left inside it can't survive the database cache
+            // store's unserialize() round-trip (arbitrary objects are
+            // blocked), coming back as a broken __PHP_Incomplete_Class
+            // stub. Must be plain arrays all the way down.
+            'items' => $menu->items->map(fn (MenuItem $item) => $this->itemNode($item))->values()->all(),
         ];
     }
 
@@ -205,7 +210,7 @@ class MenuController extends Controller
             'url' => $item->url,
             'displayStyle' => $item->display_style,
             'icon' => $item->icon,
-            'children' => $item->children->map(fn (MenuItem $child) => $this->itemNode($child))->values(),
+            'children' => $item->children->map(fn (MenuItem $child) => $this->itemNode($child))->values()->all(),
         ];
     }
 }
