@@ -56,7 +56,11 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $throttleKey = 'login:' . $request->ip();
+        // Keyed by email, not IP — trustProxies(at: '*') means the request
+        // IP can be reset at will by spoofing X-Forwarded-For, which would
+        // give an IP-keyed lock a fresh bucket on every attempt. A per-
+        // account key can't be sidestepped that way.
+        $throttleKey = 'login:' . strtolower($validated['email']);
 
         if (RateLimiter::tooManyAttempts($throttleKey, self::MAX_LOGIN_ATTEMPTS)) {
             $seconds = RateLimiter::availableIn($throttleKey);

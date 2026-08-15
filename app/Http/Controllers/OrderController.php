@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Discount;
 use App\Models\Order;
 use App\Models\PhoneVerification;
+use App\Models\Product;
 use App\Models\StoreSetting;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
@@ -168,6 +169,16 @@ class OrderController extends Controller
                     'phone' => 'Please verify your phone number before placing the order.',
                 ]);
             }
+
+            // Storefront checkout must never trust a client-supplied price —
+            // otherwise `POST /orders` with a hand-edited price is free
+            // money. Re-derive every line item from the product/variant
+            // record instead. Staff/POS sales are exempt: they legitimately
+            // set custom prices and may have no catalog productId at all.
+            $validated['items'] = array_map(
+                fn (array $item) => [...$item, 'price' => $this->resolveVerifiedPrice($item)],
+                $validated['items']
+            );
         }
 
         $order = DB::transaction(function () use ($validated, $isStaffOrder) {
@@ -339,6 +350,52 @@ class OrderController extends Controller
         $last = (int) (Order::max('id') ?? 0);
 
         return (string) (1000 + $last + 1);
+    }
+
+    /**
+     * Looks up the real, current price for a cart line item from the
+     * catalog rather than trusting `item.price` from the request. Matches
+     * the exact "Color / Size" label the storefront builds when adding to
+     * cart (see single-product.tsx) against each variant's option values.
+     */
+    private function resolveVerifiedPrice(array $item): float
+    {
+        $productId = is_numeric($item['productId'] ?? null) ? (int) $item['productId'] : null;
+
+        if ($productId === null) {
+            throw ValidationException::withMessages([
+                'items' => 'One or more items in your cart are invalid. Please refresh and try again.',
+            ]);
+        }
+
+        $product = Product::with('variants.optionValues.option')->find($productId);
+
+        if (! $product) {
+            throw ValidationException::withMessages([
+                'items' => 'One or more items in your cart are no longer available.',
+            ]);
+        }
+
+        if ($product->variants->isEmpty()) {
+            return (float) $product->price;
+        }
+
+        $variantLabel = trim((string) ($item['variant'] ?? ''));
+        $variant = $product->variants->first(function ($variant) use ($variantLabel) {
+            $color = $variant->optionValues->firstWhere('option.name', 'Color')?->value;
+            $size = $variant->optionValues->firstWhere('option.name', 'Size')?->value;
+            $label = collect([$color, $size])->filter()->implode(' / ');
+
+            return $label === $variantLabel;
+        });
+
+        if (! $variant) {
+            throw ValidationException::withMessages([
+                'items' => 'The selected option for one of your items is no longer available.',
+            ]);
+        }
+
+        return (float) ($variant->price ?? $product->price);
     }
 
     private function summarize(Order $order): array

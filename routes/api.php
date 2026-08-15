@@ -39,7 +39,7 @@ Route::get('/ping', function () {
 // Auth — public
 // ---------------------------------------------------------------------------
 
-Route::post('/auth/register', [AuthController::class, 'register']);
+Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 Route::post('/auth/login', [AuthController::class, 'login']);
 
 // Opened straight from the verification email — no bearer token attached,
@@ -112,7 +112,7 @@ Route::get('/settings', [SettingsController::class, 'show']);
 Route::get('/media/file/{filename}', [MediaController::class, 'serve']);
 
 Route::post('/orders', [OrderController::class, 'store']);
-Route::post('/orders/track', [OrderController::class, 'track']);
+Route::post('/orders/track', [OrderController::class, 'track'])->middleware('throttle:10,1');
 
 // Checkout's fake-order-protection step — see PhoneVerificationController.
 Route::post('/checkout/phone/send-code', [PhoneVerificationController::class, 'sendCode']);
@@ -122,13 +122,14 @@ Route::post('/checkout/phone/verify-code', [PhoneVerificationController::class, 
 Route::post('/orders/{id}/bkash/create-payment', [BkashController::class, 'create']);
 Route::get('/checkout/bkash/callback', [BkashController::class, 'callback'])->name('bkash.callback');
 
-Route::post('/discounts/validate', [DiscountController::class, 'validateCode']);
+Route::post('/discounts/validate', [DiscountController::class, 'validateCode'])->middleware('throttle:15,1');
 
 Route::post('/subscribers', [SubscriberController::class, 'store'])->middleware('throttle:5,1');
 
 Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
 
-Route::post('/chat', [ChatController::class, 'send']);
+// Unthrottled otherwise, this hits a paid Anthropic API on every call.
+Route::post('/chat', [ChatController::class, 'send'])->middleware('throttle:10,1');
 
 // ---------------------------------------------------------------------------
 // Dashboard — permission-gated (see RolesAndPermissionsSeeder for the full
