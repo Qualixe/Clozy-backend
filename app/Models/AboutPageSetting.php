@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class AboutPageSetting extends Model
 {
@@ -38,9 +39,26 @@ class AboutPageSetting extends Model
         'values' => 'array',
     ];
 
-    /** The single settings row, created on first access. */
+    /** Cache key for the singleton row — see current()/booted(). */
+    private const CACHE_KEY = 'settings:about';
+
+    /**
+     * Public, rarely-changing content read on every About page hit — cached
+     * the same way as StoreSetting::current() (see that class for why raw
+     * attributes + newFromBuilder() rather than caching the model itself).
+     */
     public static function current(): self
     {
-        return static::firstOrCreate(['id' => 1]);
+        $attributes = Cache::remember(self::CACHE_KEY, now()->addMinutes(30), function () {
+            return static::firstOrCreate(['id' => 1])->getAttributes();
+        });
+
+        return (new static)->newFromBuilder($attributes);
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => Cache::forget(self::CACHE_KEY));
+        static::deleted(fn () => Cache::forget(self::CACHE_KEY));
     }
 }

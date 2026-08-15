@@ -7,33 +7,41 @@ use App\Models\CategoryGridBannerItem;
 use App\Models\StoreSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class CategoryGridBannerController extends Controller
 {
+    private const CACHE_KEY = 'home:category-grid-banner';
+
     /**
      * Public — powers the homepage's 4-up category grid banner
      * (Theme > Category Banners): whether it's shown, and the hand-picked
-     * categories in the admin's chosen order.
+     * categories in the admin's chosen order. Cached with a short TTL since
+     * the embedded category summaries include a live product count.
      */
     public function index(): JsonResponse
     {
-        $settings = StoreSetting::current();
+        $payload = Cache::remember(self::CACHE_KEY, now()->addMinutes(5), function () {
+            $settings = StoreSetting::current();
 
-        $categories = CategoryGridBannerItem::with('category')
-            ->orderBy('position')
-            ->get()
-            ->map(fn (CategoryGridBannerItem $item) => $item->category)
-            ->filter()
-            ->values();
+            $categories = CategoryGridBannerItem::with('category')
+                ->orderBy('position')
+                ->get()
+                ->map(fn (CategoryGridBannerItem $item) => $item->category)
+                ->filter()
+                ->values();
 
-        $categoryController = new CategoryController;
+            $categoryController = new CategoryController;
 
-        return response()->json([
-            'enabled' => $settings->category_grid_banner_enabled,
-            'heading' => $settings->category_grid_banner_heading,
-            'categories' => $categories->map(fn (Category $c) => $categoryController->summarize($c))->values(),
-        ]);
+            return [
+                'enabled' => $settings->category_grid_banner_enabled,
+                'heading' => $settings->category_grid_banner_heading,
+                'categories' => $categories->map(fn (Category $c) => $categoryController->summarize($c))->values()->all(),
+            ];
+        });
+
+        return response()->json($payload);
     }
 
     /**
@@ -66,6 +74,8 @@ class CategoryGridBannerController extends Controller
                 ]);
             }
         });
+
+        Cache::forget(self::CACHE_KEY);
 
         return $this->index();
     }

@@ -6,20 +6,28 @@ use App\Models\StoreSetting;
 use App\Models\VideoSectionItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class VideoSectionController extends Controller
 {
+    private const CACHE_KEY = 'home:video-section';
+
+    /** Public — powers the homepage video section. Cached; see update(). */
     public function index(): JsonResponse
     {
-        $settings = StoreSetting::current();
-        $items = VideoSectionItem::orderBy('position')->get();
+        $payload = Cache::remember(self::CACHE_KEY, now()->addMinutes(15), function () {
+            $settings = StoreSetting::current();
+            $items = VideoSectionItem::orderBy('position')->get();
 
-        return response()->json([
-            'enabled' => $settings->video_section_enabled,
-            'heading' => $settings->video_section_heading,
-            'items' => $items->map(fn (VideoSectionItem $i) => $this->summarize($i))->values(),
-        ]);
+            return [
+                'enabled' => $settings->video_section_enabled,
+                'heading' => $settings->video_section_heading,
+                'items' => $items->map(fn (VideoSectionItem $i) => $this->summarize($i))->values()->all(),
+            ];
+        });
+
+        return response()->json($payload);
     }
 
     /**
@@ -57,6 +65,8 @@ class VideoSectionController extends Controller
 
             return VideoSectionItem::orderBy('position')->get();
         });
+
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json([
             'enabled' => $settings->video_section_enabled,

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class StoreSetting extends Model
 {
@@ -113,9 +114,32 @@ class StoreSetting extends Model
         'category_grid_banner_enabled' => 'boolean',
     ];
 
-    /** The single settings row, created on first access. */
+    /** Cache key for the singleton row — see current()/booted(). */
+    private const CACHE_KEY = 'settings:store';
+
+    /**
+     * Read on nearly every request (checkout, chat, analytics, the storefront
+     * layout, the verification email...), so the singleton row is cached
+     * rather than re-queried each time. Cached as raw attributes (not the
+     * model instance) since the `database` cache store's unserialize() call
+     * disallows reconstituting arbitrary objects (see config/cache.php's
+     * `serializable_classes => false`) — newFromBuilder() rebuilds a normal,
+     * fully-cast model from that raw array. Invalidated by booted() below
+     * whenever the row is saved/deleted, so this never needs a manual
+     * Cache::forget() at each write site.
+     */
     public static function current(): self
     {
-        return static::firstOrCreate(['id' => 1]);
+        $attributes = Cache::remember(self::CACHE_KEY, now()->addMinutes(30), function () {
+            return static::firstOrCreate(['id' => 1])->getAttributes();
+        });
+
+        return (new static)->newFromBuilder($attributes);
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => Cache::forget(self::CACHE_KEY));
+        static::deleted(fn () => Cache::forget(self::CACHE_KEY));
     }
 }

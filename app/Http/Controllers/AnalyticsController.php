@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\StoreSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class AnalyticsController extends Controller
@@ -31,11 +32,7 @@ class AnalyticsController extends Controller
             ]);
         }
 
-        $orders = Order::with('items')
-            ->where('created_at', '>=', Carbon::now()->subDays(90))
-            ->get();
-
-        $stats = $this->buildStats($orders);
+        $stats = $this->buildStats(Carbon::now()->subDays(90));
 
         try {
             $client = new Client(apiKey: $settings->anthropic_api_key);
@@ -91,54 +88,77 @@ class AnalyticsController extends Controller
         }
     }
 
-    private function buildStats(\Illuminate\Support\Collection $orders): array
+    /**
+     * Aggregated entirely in the database rather than pulling every order
+     * (and every order's items) into PHP and summing them in a loop — the
+     * previous approach loaded the full 90-day order+item history into
+     * memory on every AI-insights request. Each figure below preserves the
+     * exact original PHP-loop semantics (see git history), just computed
+     * as a SUM/COUNT/GROUP BY instead.
+     */
+    private function buildStats(Carbon $since): array
     {
-        $totalRevenue = 0.0;
+        // Orders are only ever created with a lowercase status (see the
+        // `status` enum on the orders table / updateStatus()'s validation),
+        // but the original loop normalized with strtolower() before
+        // counting — LOWER() here matches that same defensive behavior.
         $statusCounts = ['fulfilled' => 0, 'processing' => 0, 'cancelled' => 0];
-        $revenueByDay = [];
-        $productRevenue = [];
 
-        foreach ($orders as $order) {
-            $status = strtolower($order->status);
-            $statusCounts[$status] = ($statusCounts[$status] ?? 0) + 1;
+        $statusRows = Order::query()
+            ->where('created_at', '>=', $since)
+            ->selectRaw('LOWER(status) as status, COUNT(*) as cnt')
+            ->groupByRaw('LOWER(status)')
+            ->pluck('cnt', 'status');
 
-            if ($status === 'cancelled') {
-                continue;
-            }
-
-            $total = (float) $order->total;
-            $totalRevenue += $total;
-
-            $day = $order->created_at->toDateString();
-            $revenueByDay[$day] = ($revenueByDay[$day] ?? 0) + $total;
-
-            foreach ($order->items as $item) {
-                $productRevenue[$item->name] = ($productRevenue[$item->name] ?? 0)
-                    + ((float) $item->price * $item->qty);
-            }
+        foreach ($statusRows as $status => $count) {
+            $statusCounts[$status] = ($statusCounts[$status] ?? 0) + (int) $count;
         }
 
-        arsort($productRevenue);
-        ksort($revenueByDay);
+        // Total orders in the period across every status — summing the
+        // per-status counts already queried above avoids a second COUNT
+        // query for what's arithmetically the same number.
+        $totalOrders = (int) $statusRows->sum();
 
-        $nonCancelledCount = $orders->count() - $statusCounts['cancelled'];
+        $revenueRow = Order::query()
+            ->where('created_at', '>=', $since)
+            ->whereRaw('LOWER(status) != ?', ['cancelled'])
+            ->selectRaw('COALESCE(SUM(total), 0) as revenue, COUNT(*) as cnt')
+            ->first();
+
+        $totalRevenue = (float) $revenueRow->revenue;
+        $nonCancelledCount = (int) $revenueRow->cnt;
+
+        $revenueByDay = Order::query()
+            ->where('created_at', '>=', $since)
+            ->whereRaw('LOWER(status) != ?', ['cancelled'])
+            ->selectRaw('DATE(created_at) as day, SUM(total) as revenue')
+            ->groupByRaw('DATE(created_at)')
+            ->orderBy('day')
+            ->pluck('revenue', 'day')
+            ->map(fn ($revenue) => (float) $revenue)
+            ->all();
+
+        $topProductsByRevenue = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.created_at', '>=', $since)
+            ->whereRaw('LOWER(orders.status) != ?', ['cancelled'])
+            ->selectRaw('order_items.name as name, SUM(order_items.price * order_items.qty) as revenue')
+            ->groupBy('order_items.name')
+            ->orderByDesc('revenue')
+            ->limit(5)
+            ->get()
+            ->map(fn ($row) => ['name' => $row->name, 'revenue' => round((float) $row->revenue, 2)])
+            ->values()
+            ->all();
 
         return [
             'periodDays' => 90,
-            'totalOrders' => $orders->count(),
+            'totalOrders' => $totalOrders,
             'totalRevenue' => round($totalRevenue, 2),
             'avgOrderValue' => $nonCancelledCount > 0 ? round($totalRevenue / $nonCancelledCount, 2) : 0,
             'ordersByStatus' => $statusCounts,
             'revenueByDay' => $revenueByDay,
-            'topProductsByRevenue' => array_slice(
-                array_map(
-                    fn ($name, $revenue) => ['name' => $name, 'revenue' => round($revenue, 2)],
-                    array_keys($productRevenue),
-                    array_values($productRevenue),
-                ),
-                0,
-                5,
-            ),
+            'topProductsByRevenue' => $topProductsByRevenue,
         ];
     }
 }

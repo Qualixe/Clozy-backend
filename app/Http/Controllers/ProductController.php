@@ -209,6 +209,10 @@ class ProductController extends Controller
 
         $product->load(['category', 'collections', 'tags', 'images', 'variants']);
 
+        // A new product changes the category list's per-category product
+        // count (see CategoryController::index's cached response).
+        CategoryController::forgetCache();
+
         return response()->json($this->summarize($product), 201);
     }
 
@@ -278,6 +282,10 @@ class ProductController extends Controller
 
         $product->load(['category', 'collections', 'tags', 'images', 'variants']);
 
+        // A category reassignment or deletion changes per-category product
+        // counts (see CategoryController::index's cached response).
+        CategoryController::forgetCache();
+
         return response()->json($this->summarize($product));
     }
 
@@ -292,6 +300,7 @@ class ProductController extends Controller
         // Images, options/values, variants, metafields, and the tag pivot
         // all cascade via FK constraints; tags/categories are shared and stay.
         $product->delete();
+        CategoryController::forgetCache();
 
         return response()->json(null, 204);
     }

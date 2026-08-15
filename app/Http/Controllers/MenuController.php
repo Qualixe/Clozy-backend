@@ -6,6 +6,7 @@ use App\Models\Menu;
 use App\Models\MenuItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -34,16 +35,30 @@ class MenuController extends Controller
         return response()->json($this->detail($menu));
     }
 
-    /** Public lookup used by the storefront to render a menu by its handle (e.g. "main-menu"). */
+    /**
+     * Public lookup used by the storefront to render a menu by its handle
+     * (e.g. "main-menu") — a 3-level nested eager load queried raw on every
+     * page load otherwise, so the assembled response is cached per handle.
+     * Invalidated from update()/destroy() below.
+     */
     public function showByHandle(string $handle): JsonResponse
     {
-        $menu = Menu::with('items.children.children')->where('handle', $handle)->first();
+        $detail = Cache::remember(self::cacheKey($handle), now()->addMinutes(30), function () use ($handle) {
+            $menu = Menu::with('items.children.children')->where('handle', $handle)->first();
 
-        if (! $menu) {
+            return $menu ? $this->detail($menu) : null;
+        });
+
+        if (! $detail) {
             return response()->json(['message' => 'Menu not found'], 404);
         }
 
-        return response()->json($this->detail($menu));
+        return response()->json($detail);
+    }
+
+    private static function cacheKey(string $handle): string
+    {
+        return "menu:{$handle}";
     }
 
     public function store(Request $request): JsonResponse
@@ -90,6 +105,8 @@ class MenuController extends Controller
             'items.*.children.*.children.*.url' => ['required', 'string', 'max:2048'],
         ]);
 
+        $originalHandle = $menu->handle;
+
         DB::transaction(function () use ($menu, $validated) {
             if ($validated['name'] !== $menu->name) {
                 $menu->update([
@@ -108,6 +125,13 @@ class MenuController extends Controller
             }
         });
 
+        // Both the old handle (its cached response is now stale) and, if the
+        // name change also changed the handle, the new one too.
+        Cache::forget(self::cacheKey($originalHandle));
+        if ($menu->handle !== $originalHandle) {
+            Cache::forget(self::cacheKey($menu->handle));
+        }
+
         return response()->json($this->detail($menu->fresh('items.children.children')));
     }
 
@@ -120,6 +144,7 @@ class MenuController extends Controller
         }
 
         $menu->delete();
+        Cache::forget(self::cacheKey($menu->handle));
 
         return response()->json(null, 204);
     }

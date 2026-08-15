@@ -175,8 +175,24 @@ class OrderController extends Controller
             // money. Re-derive every line item from the product/variant
             // record instead. Staff/POS sales are exempt: they legitimately
             // set custom prices and may have no catalog productId at all.
+            //
+            // Fetched as a single batch (rather than one query per line
+            // item inside resolveVerifiedPrice()) to avoid an N+1 on carts
+            // with several line items.
+            $productIds = collect($validated['items'])
+                ->pluck('productId')
+                ->filter(fn ($id) => is_numeric($id))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            $products = Product::with('variants.optionValues.option')
+                ->whereIn('id', $productIds)
+                ->get()
+                ->keyBy('id');
+
             $validated['items'] = array_map(
-                fn (array $item) => [...$item, 'price' => $this->resolveVerifiedPrice($item)],
+                fn (array $item) => [...$item, 'price' => $this->resolveVerifiedPrice($item, $products)],
                 $validated['items']
             );
         }
@@ -357,8 +373,12 @@ class OrderController extends Controller
      * catalog rather than trusting `item.price` from the request. Matches
      * the exact "Color / Size" label the storefront builds when adding to
      * cart (see single-product.tsx) against each variant's option values.
+     *
+     * `$products` is the whole cart's products (with variants) fetched
+     * up front in a single batched query by the caller — see store() —
+     * rather than this method querying per line item.
      */
-    private function resolveVerifiedPrice(array $item): float
+    private function resolveVerifiedPrice(array $item, \Illuminate\Support\Collection $products): float
     {
         $productId = is_numeric($item['productId'] ?? null) ? (int) $item['productId'] : null;
 
@@ -368,7 +388,7 @@ class OrderController extends Controller
             ]);
         }
 
-        $product = Product::with('variants.optionValues.option')->find($productId);
+        $product = $products->get($productId);
 
         if (! $product) {
             throw ValidationException::withMessages([

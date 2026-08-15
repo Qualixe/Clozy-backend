@@ -5,16 +5,23 @@ namespace App\Http\Controllers;
 use App\Models\StoreSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class PromoBannerController extends Controller
 {
+    private const CACHE_KEY = 'home:promo-banner';
+
     /**
      * Public — powers the homepage's single full-width promo banner
-     * (Theme > Promo Banner).
+     * (Theme > Promo Banner). Cached; see update().
      */
     public function index(): JsonResponse
     {
-        return response()->json($this->summarize(StoreSetting::current()));
+        $payload = Cache::remember(self::CACHE_KEY, now()->addMinutes(15), function () {
+            return $this->summarize(StoreSetting::current());
+        });
+
+        return response()->json($payload);
     }
 
     public function update(Request $request): JsonResponse
@@ -39,6 +46,8 @@ class PromoBannerController extends Controller
             'promo_banner_cta_label' => $validated['ctaLabel'] ?? null,
             'promo_banner_cta_href' => $validated['ctaHref'] ?? null,
         ]);
+
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json($this->summarize($settings));
     }

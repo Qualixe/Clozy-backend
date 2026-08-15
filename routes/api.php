@@ -115,12 +115,15 @@ Route::post('/orders', [OrderController::class, 'store']);
 Route::post('/orders/track', [OrderController::class, 'track'])->middleware('throttle:10,1');
 
 // Checkout's fake-order-protection step — see PhoneVerificationController.
-Route::post('/checkout/phone/send-code', [PhoneVerificationController::class, 'sendCode']);
+// sendCode() also has its own per-phone-number RateLimiter check internally;
+// this is a coarser per-IP backstop against hammering the SMS gateway.
+Route::post('/checkout/phone/send-code', [PhoneVerificationController::class, 'sendCode'])->middleware('throttle:5,1');
 Route::post('/checkout/phone/verify-code', [PhoneVerificationController::class, 'verifyCode']);
 
-// bKash payment gateway — see BkashController.
-Route::post('/orders/{id}/bkash/create-payment', [BkashController::class, 'create']);
-Route::get('/checkout/bkash/callback', [BkashController::class, 'callback'])->name('bkash.callback');
+// bKash payment gateway — see BkashController. Generous limits: these sit
+// on the real checkout/payment path and must not block legitimate traffic.
+Route::post('/orders/{id}/bkash/create-payment', [BkashController::class, 'create'])->middleware('throttle:20,1');
+Route::get('/checkout/bkash/callback', [BkashController::class, 'callback'])->name('bkash.callback')->middleware('throttle:20,1');
 
 Route::post('/discounts/validate', [DiscountController::class, 'validateCode'])->middleware('throttle:15,1');
 
@@ -162,14 +165,18 @@ Route::middleware(['auth:sanctum', 'permission:view_orders'])->group(function ()
 });
 Route::middleware(['auth:sanctum', 'permission:manage_orders'])->group(function () {
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
-    Route::post('/orders/{id}/ship', [CourierController::class, 'send']);
-    Route::get('/orders/{id}/tracking', [CourierController::class, 'refreshStatus']);
-    Route::get('/courier/pathao/cities', [CourierController::class, 'pathaoCities']);
-    Route::get('/courier/pathao/cities/{cityId}/zones', [CourierController::class, 'pathaoZones']);
+    // Courier endpoints hit Pathao/Steadfast's live APIs — throttled as a
+    // generous anti-abuse backstop, not a normal-usage limit.
+    Route::post('/orders/{id}/ship', [CourierController::class, 'send'])->middleware('throttle:20,1');
+    Route::get('/orders/{id}/tracking', [CourierController::class, 'refreshStatus'])->middleware('throttle:20,1');
+    Route::get('/courier/pathao/cities', [CourierController::class, 'pathaoCities'])->middleware('throttle:20,1');
+    Route::get('/courier/pathao/cities/{cityId}/zones', [CourierController::class, 'pathaoZones'])->middleware('throttle:20,1');
 });
 
+// Unthrottled otherwise, this hits a paid Anthropic API on every call —
+// same pattern as /chat above.
 Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function () {
-    Route::post('/analytics/ai-insights', [AnalyticsController::class, 'aiInsights']);
+    Route::post('/analytics/ai-insights', [AnalyticsController::class, 'aiInsights'])->middleware('throttle:10,1');
 });
 
 Route::middleware(['auth:sanctum', 'permission:create_menus'])->group(function () {
@@ -226,8 +233,8 @@ Route::middleware(['auth:sanctum', 'permission:edit_theme'])->group(function () 
 Route::middleware(['auth:sanctum', 'permission:manage_settings'])->group(function () {
     Route::get('/settings/admin', [SettingsController::class, 'adminShow']);
     Route::put('/settings', [SettingsController::class, 'update']);
-    Route::get('/courier/balance', [CourierController::class, 'balance']);
-    Route::get('/courier/pathao/stores', [CourierController::class, 'pathaoStores']);
+    Route::get('/courier/balance', [CourierController::class, 'balance'])->middleware('throttle:20,1');
+    Route::get('/courier/pathao/stores', [CourierController::class, 'pathaoStores'])->middleware('throttle:20,1');
     Route::get('/subscribers', [SubscriberController::class, 'index']);
     Route::delete('/subscribers/{id}', [SubscriberController::class, 'destroy']);
 });

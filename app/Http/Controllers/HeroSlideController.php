@@ -5,15 +5,22 @@ namespace App\Http\Controllers;
 use App\Models\HeroSlide;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class HeroSlideController extends Controller
 {
+    private const CACHE_KEY = 'home:hero-slides';
+
+    /** Public — powers the homepage hero carousel. Cached; see update(). */
     public function index(): JsonResponse
     {
-        $slides = HeroSlide::orderBy('position')->get();
+        $slides = Cache::remember(self::CACHE_KEY, now()->addMinutes(15), function () {
+            return HeroSlide::orderBy('position')->get()
+                ->map(fn (HeroSlide $s) => $this->summarize($s))->values()->all();
+        });
 
-        return response()->json($slides->map(fn (HeroSlide $s) => $this->summarize($s))->values());
+        return response()->json($slides);
     }
 
     /**
@@ -62,6 +69,8 @@ class HeroSlideController extends Controller
 
             return HeroSlide::orderBy('position')->get();
         });
+
+        Cache::forget(self::CACHE_KEY);
 
         return response()->json($slides->map(fn (HeroSlide $s) => $this->summarize($s))->values());
     }

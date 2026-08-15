@@ -6,17 +6,37 @@ use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
 {
+    /** Cache key for the public category list — see index()/forgetCache(). */
+    private const CACHE_KEY = 'categories:all';
+
+    /**
+     * Public storefront read (nav, collection grids) — cached briefly since
+     * categories change more often than pure settings/content pages. See
+     * forgetCache(), called from every write path below, plus
+     * ProductController (a product's category assignment changes the
+     * productCount shown here).
+     */
     public function index(): JsonResponse
     {
-        $categories = Category::withCount('products')->orderBy('position')->orderBy('name')->get();
+        $categories = Cache::remember(self::CACHE_KEY, now()->addMinutes(5), function () {
+            return Category::withCount('products')->orderBy('position')->orderBy('name')->get()
+                ->map(fn (Category $c) => $this->summarize($c))->values()->all();
+        });
 
-        return response()->json($categories->map(fn (Category $c) => $this->summarize($c))->values());
+        return response()->json($categories);
+    }
+
+    /** Public so other write paths (e.g. ProductController) can invalidate the same cache. */
+    public static function forgetCache(): void
+    {
+        Cache::forget(self::CACHE_KEY);
     }
 
     /**
@@ -35,6 +55,8 @@ class CategoryController extends Controller
                 Category::where('id', $id)->update(['position' => $index]);
             }
         });
+
+        self::forgetCache();
 
         return response()->json(['message' => 'Order updated']);
     }
@@ -68,6 +90,7 @@ class CategoryController extends Controller
         ]);
 
         $category->loadCount('products');
+        self::forgetCache();
 
         return response()->json($this->summarize($category), 201);
     }
@@ -88,6 +111,7 @@ class CategoryController extends Controller
 
         $category->update($validated);
         $category->loadCount('products');
+        self::forgetCache();
 
         return response()->json($this->summarize($category));
     }
@@ -148,6 +172,7 @@ class CategoryController extends Controller
 
         // Products keep existing via `category_id`'s nullOnDelete constraint.
         $category->delete();
+        self::forgetCache();
 
         return response()->json(null, 204);
     }
