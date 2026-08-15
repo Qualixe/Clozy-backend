@@ -576,6 +576,9 @@ class ProductController extends Controller
             'image' => $product->images->first()?->url,
             'tag' => $this->badgeTag($product),
             'tabs' => $product->tags->pluck('slug')->values(),
+            // Lets product-card.tsx send an "Add to Cart" click to the full
+            // product page instead, when there's a color/size choice to make.
+            'hasVariants' => (bool) $product->has_variants,
         ];
     }
 
