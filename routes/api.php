@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AboutPageController;
+use App\Http\Controllers\AdminChatController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BkashController;
@@ -177,6 +178,14 @@ Route::middleware(['auth:sanctum', 'permission:manage_orders'])->group(function 
 // same pattern as /chat above.
 Route::middleware(['auth:sanctum', 'permission:view_analytics'])->group(function () {
     Route::post('/analytics/ai-insights', [AnalyticsController::class, 'aiInsights'])->middleware('throttle:10,1');
+});
+
+// Dashboard "store ops copilot" — any authenticated staff member can reach
+// it, but AdminChatController itself only offers tools for the specific
+// view_orders/view_products/view_analytics permissions the caller actually
+// has (see availableTools()), so no single permission group fits here.
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/admin/chat', [AdminChatController::class, 'send'])->middleware('throttle:10,1');
 });
 
 Route::middleware(['auth:sanctum', 'permission:create_menus'])->group(function () {

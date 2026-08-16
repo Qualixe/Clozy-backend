@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\StoreSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class ChatController extends Controller
@@ -18,8 +19,9 @@ class ChatController extends Controller
      * Storefront shopping-assistant chat. Public — no auth, matches every
      * other storefront-facing endpoint. Stateless: the client resends the
      * full message history on every turn. Never 500s on a missing/invalid
-     * key or a Claude API failure — always 200 with either a reply or a
-     * reason it couldn't answer, so the widget can show a friendly message.
+     * key or an API failure — always 200 with either a reply or a reason
+     * it couldn't answer, so the widget can show a friendly message. Uses
+     * whichever provider is selected in Settings > AI.
      */
     public function send(Request $request): JsonResponse
     {
@@ -30,8 +32,10 @@ class ChatController extends Controller
         ]);
 
         $settings = StoreSetting::current();
+        $useOpenAi = $settings->ai_provider === 'openai';
+        $key = $useOpenAi ? $settings->openai_api_key : $settings->anthropic_api_key;
 
-        if (! $settings->anthropic_api_key) {
+        if (! $key) {
             return response()->json([
                 'configured' => false,
                 'reply' => null,
@@ -45,6 +49,13 @@ class ChatController extends Controller
             $validated['messages']
         );
 
+        return $useOpenAi
+            ? $this->sendViaOpenAi($settings, $messages)
+            : $this->sendViaAnthropic($settings, $messages);
+    }
+
+    private function sendViaAnthropic(StoreSetting $settings, array $messages): JsonResponse
+    {
         try {
             $client = new Client(apiKey: $settings->anthropic_api_key);
 
@@ -130,6 +141,99 @@ class ChatController extends Controller
         }
     }
 
+    private function sendViaOpenAi(StoreSetting $settings, array $messages): JsonResponse
+    {
+        // OpenAI's message shape rather than Anthropic's: role/content
+        // strings plus an assistant `tool_calls` array and `role: 'tool'`
+        // responses, instead of content blocks.
+        $openAiMessages = [
+            ['role' => 'system', 'content' => $this->systemPrompt()],
+            ...array_map(
+                fn (array $m) => ['role' => $m['role'], 'content' => $m['content']],
+                $messages
+            ),
+        ];
+
+        try {
+            $foundProducts = [];
+            $reply = '';
+
+            for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
+                $response = Http::withToken($settings->openai_api_key)
+                    ->timeout(30)
+                    ->post('https://api.openai.com/v1/chat/completions', [
+                        'model' => $settings->openai_model ?: 'gpt-4o-mini',
+                        'max_tokens' => 1024,
+                        'messages' => $openAiMessages,
+                        'tools' => [$this->searchProductsToolDefinitionOpenAi()],
+                    ]);
+
+                if (! $response->successful()) {
+                    return response()->json([
+                        'configured' => true,
+                        'reply' => null,
+                        'products' => [],
+                        'error' => 'OpenAI API error: '.($response->json('error.message') ?? $response->body()),
+                    ]);
+                }
+
+                $message = $response->json('choices.0.message') ?? [];
+                $toolCalls = $message['tool_calls'] ?? [];
+
+                if (! empty($message['content'])) {
+                    $reply .= $message['content'];
+                }
+
+                $openAiMessages[] = [
+                    'role' => 'assistant',
+                    'content' => $message['content'] ?? null,
+                    ...($toolCalls ? ['tool_calls' => $toolCalls] : []),
+                ];
+
+                if (empty($toolCalls)) {
+                    break;
+                }
+
+                foreach ($toolCalls as $call) {
+                    $input = json_decode($call['function']['arguments'] ?? '{}', true) ?: [];
+                    $results = $this->runSearchProducts($input);
+                    foreach ($results as $product) {
+                        $foundProducts[$product['id']] = $product;
+                    }
+
+                    $openAiMessages[] = [
+                        'role' => 'tool',
+                        'tool_call_id' => $call['id'],
+                        'content' => json_encode(array_values($results)),
+                    ];
+                }
+            }
+
+            if ($reply === '') {
+                return response()->json([
+                    'configured' => true,
+                    'reply' => "Sorry, I couldn't come up with an answer to that. Could you try rephrasing?",
+                    'products' => [],
+                    'error' => null,
+                ]);
+            }
+
+            return response()->json([
+                'configured' => true,
+                'reply' => $reply,
+                'products' => array_values($foundProducts),
+                'error' => null,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'configured' => true,
+                'reply' => null,
+                'products' => [],
+                'error' => 'Could not reach the OpenAI API: '.$e->getMessage(),
+            ]);
+        }
+    }
+
     private function systemPrompt(): string
     {
         return 'You are the shopping assistant for Clozy, an online fashion and footwear store. '
@@ -166,6 +270,21 @@ class ChatController extends Controller
                     ],
                 ],
                 'required' => [],
+            ],
+        ];
+    }
+
+    /** Same tool, described in OpenAI's function-calling shape rather than Anthropic's. */
+    private function searchProductsToolDefinitionOpenAi(): array
+    {
+        $definition = $this->searchProductsToolDefinition();
+
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $definition['name'],
+                'description' => $definition['description'],
+                'parameters' => $definition['input_schema'],
             ],
         ];
     }

@@ -69,6 +69,9 @@ class SettingsController extends Controller
             'bkashPartialAdvancePercent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'bkashPartialAdvanceFixedAmount' => ['nullable', 'numeric', 'min:0'],
             'anthropicApiKey' => ['nullable', 'string', 'max:255'],
+            'aiProvider' => ['nullable', 'in:anthropic,openai'],
+            'openaiApiKey' => ['nullable', 'string', 'max:255'],
+            'openaiModel' => ['nullable', 'string', 'max:255'],
             'logoUrl' => ['nullable', 'string', 'max:2048'],
             'faviconUrl' => ['nullable', 'string', 'max:2048'],
             'emailLogoUrl' => ['nullable', 'string', 'max:2048'],
@@ -153,6 +156,9 @@ class SettingsController extends Controller
             'bkash_partial_advance_percent' => $validated['bkashPartialAdvancePercent'] ?? 20,
             'bkash_partial_advance_fixed_amount' => $validated['bkashPartialAdvanceFixedAmount'] ?? null,
             'anthropic_api_key' => $validated['anthropicApiKey'] ?? null,
+            'ai_provider' => $validated['aiProvider'] ?? 'anthropic',
+            'openai_api_key' => $validated['openaiApiKey'] ?? null,
+            'openai_model' => $validated['openaiModel'] ?? null,
             'logo_url' => $validated['logoUrl'] ?? null,
             'favicon_url' => $validated['faviconUrl'] ?? null,
             'email_logo_url' => $validated['emailLogoUrl'] ?? null,
@@ -197,7 +203,10 @@ class SettingsController extends Controller
             'tiktokPixelId' => $settings->tiktok_pixel_id,
             // Safe to expose publicly — a boolean, never the key itself. The
             // storefront chat widget uses it to decide whether to render.
-            'aiChatEnabled' => $settings->anthropic_api_key !== null,
+            // Reflects whichever provider is actually selected.
+            'aiChatEnabled' => $settings->ai_provider === 'openai'
+                ? $settings->openai_api_key !== null
+                : $settings->anthropic_api_key !== null,
             // The logo image itself is already public on every storefront
             // page, so its URL is fine to serve from the public endpoint.
             'logoUrl' => $settings->logo_url,
@@ -245,6 +254,10 @@ class SettingsController extends Controller
             'bkashPassword' => $settings->bkash_password,
             'anthropicApiKey' => $settings->anthropic_api_key,
             'anthropicConfigured' => $settings->anthropic_api_key !== null,
+            'aiProvider' => $settings->ai_provider ?? 'anthropic',
+            'openaiApiKey' => $settings->openai_api_key,
+            'openaiConfigured' => $settings->openai_api_key !== null,
+            'openaiModel' => $settings->openai_model,
         ];
     }
 }
