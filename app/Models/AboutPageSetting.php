@@ -32,6 +32,8 @@ class AboutPageSetting extends Model
         'cta_body',
         'cta_button_label',
         'cta_button_href',
+        'seo_title',
+        'seo_description',
     ];
 
     protected $casts = [

@@ -92,6 +92,8 @@ class AboutPageController extends Controller
             'ctaBody' => ['nullable', 'string', 'max:1000'],
             'ctaButtonLabel' => ['nullable', 'string', 'max:255'],
             'ctaButtonHref' => ['nullable', 'string', 'max:2048'],
+            'seoTitle' => ['nullable', 'string', 'max:255'],
+            'seoDescription' => ['nullable', 'string', 'max:500'],
         ]);
 
         $settings = AboutPageSetting::current();
@@ -120,6 +122,8 @@ class AboutPageController extends Controller
             'cta_body' => $validated['ctaBody'] ?? null,
             'cta_button_label' => $validated['ctaButtonLabel'] ?? null,
             'cta_button_href' => $validated['ctaButtonHref'] ?? null,
+            'seo_title' => $validated['seoTitle'] ?? null,
+            'seo_description' => $validated['seoDescription'] ?? null,
         ]);
 
         return response()->json($this->summarize($settings));
@@ -152,6 +156,8 @@ class AboutPageController extends Controller
             'ctaBody' => $s->cta_body ?? self::DEFAULTS['ctaBody'],
             'ctaButtonLabel' => $s->cta_button_label ?? self::DEFAULTS['ctaButtonLabel'],
             'ctaButtonHref' => $s->cta_button_href ?? self::DEFAULTS['ctaButtonHref'],
+            'seoTitle' => $s->seo_title,
+            'seoDescription' => $s->seo_description,
         ];
     }
 }

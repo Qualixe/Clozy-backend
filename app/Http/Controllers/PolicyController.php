@@ -54,6 +54,8 @@ class PolicyController extends Controller
             'slug' => ['nullable', 'string', 'max:255'],
             'content' => ['nullable', 'string'],
             'status' => ['required', 'in:draft,published'],
+            'seoTitle' => ['nullable', 'string', 'max:255'],
+            'seoDescription' => ['nullable', 'string'],
         ]);
 
         $policy = Policy::create([
@@ -61,6 +63,8 @@ class PolicyController extends Controller
             'slug' => $this->uniqueSlug($validated['slug'] ?: $validated['title']),
             'content' => $validated['content'] ?? '',
             'status' => $validated['status'],
+            'seo_title' => $validated['seoTitle'] ?? null,
+            'seo_description' => $validated['seoDescription'] ?? null,
         ]);
 
         return response()->json($this->detail($policy), 201);
@@ -79,6 +83,8 @@ class PolicyController extends Controller
             'slug' => ['nullable', 'string', 'max:255'],
             'content' => ['nullable', 'string'],
             'status' => ['required', 'in:draft,published'],
+            'seoTitle' => ['nullable', 'string', 'max:255'],
+            'seoDescription' => ['nullable', 'string'],
         ]);
 
         $slug = $validated['slug'] ?: $validated['title'];
@@ -88,6 +94,8 @@ class PolicyController extends Controller
             'slug' => $slug !== $policy->slug ? $this->uniqueSlug($slug, $policy->id) : $policy->slug,
             'content' => $validated['content'] ?? '',
             'status' => $validated['status'],
+            'seo_title' => $validated['seoTitle'] ?? null,
+            'seo_description' => $validated['seoDescription'] ?? null,
         ]);
 
         return response()->json($this->detail($policy->fresh()));
@@ -143,6 +151,8 @@ class PolicyController extends Controller
             'slug' => $policy->slug,
             'content' => $policy->content ?? '',
             'status' => $policy->status,
+            'seoTitle' => $policy->seo_title,
+            'seoDescription' => $policy->seo_description,
             'updatedAt' => $policy->updated_at?->toIso8601String(),
         ];
     }
