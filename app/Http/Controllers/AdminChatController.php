@@ -4,15 +4,21 @@ namespace App\Http\Controllers;
 
 use Anthropic\Client;
 use Anthropic\Core\Exceptions\APIStatusException;
+use App\Models\Discount;
+use App\Models\Faq;
 use App\Models\Order;
+use App\Models\Policy;
 use App\Models\Product;
+use App\Models\ProductReview;
 use App\Models\StoreSetting;
+use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\StoreAnalyticsService;
 use App\Support\AiErrorMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -58,7 +64,7 @@ class AdminChatController extends Controller
         if (empty($tools)) {
             return response()->json([
                 'configured' => true,
-                'reply' => "You don't have permission to view any of the store data I can help with — ask an admin to grant you View Orders, View Products, or View Analytics.",
+                'reply' => "You don't have permission to view any of the store data I can help with — ask an admin to grant you at least one of: View Orders, View Products, View Analytics, View Discounts, View Reviews, View CMS Pages, View Staff, or Manage Settings.",
                 'error' => null,
             ]);
         }
@@ -243,12 +249,16 @@ class AdminChatController extends Controller
     private function systemPrompt(): string
     {
         return 'You are a store-operations copilot for Clozy admins, inside their dashboard. Answer questions '
-            .'about orders, products, and store performance using the tools available to you — never invent a '
-            .'number, order, or product that a tool didn\'t return. If a tool returns nothing matching, say so '
-            .'plainly rather than guessing. If you don\'t have a tool for what\'s asked (e.g. you weren\'t given '
-            .'access to orders), say that plainly too, and don\'t try to answer from general knowledge. Amounts '
-            .'are in BDT (Bangladeshi Taka), shown with a "৳" prefix — use that symbol when quoting figures. Keep '
-            .'replies concise and direct; use short bullet points for lists of orders/products.';
+            .'about orders, customers, products, discounts, reviews, CMS content (policies/FAQs), staff accounts, '
+            .'subscribers, and store performance using the tools available to you — never invent a number, order, '
+            .'product, or any other fact that a tool didn\'t return. If a tool returns nothing matching, say so '
+            .'plainly rather than guessing. The specific tools you have access to depend on the asking admin\'s '
+            .'own dashboard permissions, so if you don\'t have a tool for what\'s asked, say that plainly (e.g. '
+            .'"I don\'t have access to staff accounts") rather than trying to answer from general knowledge or a '
+            .'different tool. Never reveal or guess at credentials, API keys, passwords, or payment gateway '
+            .'secrets — you have no tool that returns those, and none of the tools you\'ll ever be given will. '
+            .'Amounts are in BDT (Bangladeshi Taka), shown with a "৳" prefix — use that symbol when quoting '
+            .'figures. Keep replies concise and direct; use short bullet points for lists.';
     }
 
     /**
@@ -264,8 +274,15 @@ class AdminChatController extends Controller
     {
         $tools = [];
 
+        // Gated on the exact same permission each corresponding dashboard
+        // page requires (see lib/sidebar-items.ts on the frontend) — the
+        // copilot can never see a category of data the asking user
+        // couldn't already reach through the normal dashboard nav.
         if ($user->can('view_orders')) {
             $tools['search_orders'] = $this->ordersTool();
+            // Customers has no backend resource of its own — same as the
+            // dashboard's Customers page, it's derived from Orders.
+            $tools['search_customers'] = $this->customersTool();
         }
         if ($user->can('view_products')) {
             $tools['search_products'] = $this->productsTool();
@@ -273,8 +290,49 @@ class AdminChatController extends Controller
         if ($user->can('view_analytics')) {
             $tools['get_analytics_summary'] = $this->analyticsTool();
         }
+        if ($user->can('view_discounts')) {
+            $tools['search_discounts'] = $this->discountsTool();
+        }
+        if ($user->can('view_reviews')) {
+            $tools['search_reviews'] = $this->reviewsTool();
+        }
+        if ($user->can('view_cms_pages')) {
+            $tools['search_policies'] = $this->policiesTool();
+            $tools['search_faqs'] = $this->faqsTool();
+        }
+        if ($user->can('view_staff')) {
+            $tools['search_staff'] = $this->staffTool();
+        }
+        if ($user->can('manage_settings')) {
+            $tools['search_subscribers'] = $this->subscribersTool();
+        }
 
         return $tools;
+    }
+
+    /**
+     * Both an Anthropic- and OpenAI-shaped tool definition built from one
+     * name/description/schema, alongside the closure that actually runs
+     * it — avoids repeating the two near-identical shapes for every tool.
+     */
+    private function buildTool(string $name, string $description, array $schema, callable $run): array
+    {
+        return [
+            'anthropic' => [
+                'name' => $name,
+                'description' => $description,
+                'input_schema' => $schema,
+            ],
+            'openai' => [
+                'type' => 'function',
+                'function' => [
+                    'name' => $name,
+                    'description' => $description,
+                    'parameters' => $schema,
+                ],
+            ],
+            'run' => $run,
+        ];
     }
 
     private function runTool(array $tools, string $name, array $input): array
@@ -288,43 +346,30 @@ class AdminChatController extends Controller
 
     private function ordersTool(): array
     {
-        $schema = [
-            'type' => 'object',
-            'properties' => [
-                'status' => [
-                    'type' => 'string',
-                    'enum' => ['processing', 'fulfilled', 'cancelled'],
-                    'description' => 'Filter by order status. Omit to include every status.',
+        return $this->buildTool(
+            'search_orders',
+            'Search and filter the store\'s real orders by status and/or customer. '
+                .'Returns order number, customer, status, payment method, total, and date.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['processing', 'fulfilled', 'cancelled'],
+                        'description' => 'Filter by order status. Omit to include every status.',
+                    ],
+                    'customerQuery' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the customer\'s name, email, or phone.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 8, max 15.',
+                    ],
                 ],
-                'customerQuery' => [
-                    'type' => 'string',
-                    'description' => 'Free-text match against the customer\'s name, email, or phone.',
-                ],
-                'limit' => [
-                    'type' => 'integer',
-                    'description' => 'Max results to return. Default 8, max 15.',
-                ],
+                'required' => [],
             ],
-            'required' => [],
-        ];
-
-        return [
-            'anthropic' => [
-                'name' => 'search_orders',
-                'description' => 'Search and filter the store\'s real orders by status and/or customer. '
-                    .'Returns order number, customer, status, payment method, total, and date.',
-                'input_schema' => $schema,
-            ],
-            'openai' => [
-                'type' => 'function',
-                'function' => [
-                    'name' => 'search_orders',
-                    'description' => 'Search and filter the store\'s real orders by status and/or customer. '
-                        .'Returns order number, customer, status, payment method, total, and date.',
-                    'parameters' => $schema,
-                ],
-            ],
-            'run' => function (array $input) {
+            function (array $input) {
                 $limit = min((int) ($input['limit'] ?? 8), 15);
 
                 $orders = Order::query()
@@ -349,47 +394,91 @@ class AdminChatController extends Controller
                     'date' => $o->created_at->format('Y-m-d'),
                 ])->values()->all();
             },
-        ];
+        );
+    }
+
+    private function customersTool(): array
+    {
+        return $this->buildTool(
+            'search_customers',
+            'Search the store\'s customers, derived from their order history (there\'s no separate '
+                .'customer record — same as the dashboard\'s Customers page). Returns name, email, phone, '
+                .'how many orders they\'ve placed, and total spent.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against name, email, or phone.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 8, max 15.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 8), 15);
+
+                $orders = Order::query()
+                    ->when($input['query'] ?? null, function ($q, $query) {
+                        $q->where(function ($qq) use ($query) {
+                            $qq->where('customer_name', 'like', "%{$query}%")
+                                ->orWhere('customer_email', 'like', "%{$query}%")
+                                ->orWhere('customer_phone', 'like', "%{$query}%");
+                        });
+                    })
+                    ->orderByDesc('created_at')
+                    ->get();
+
+                // Grouped by email — walk-in/POS orders with no email are
+                // each their own customer, same logic as the dashboard's
+                // Customers page (see customers-table.tsx / toCustomers()).
+                $customers = [];
+                foreach ($orders as $order) {
+                    $key = $order->customer_email ?: 'walkin-'.$order->id;
+                    $customers[$key] ??= [
+                        'name' => $order->customer_name,
+                        'email' => $order->customer_email,
+                        'phone' => $order->customer_phone,
+                        'orders' => 0,
+                        'totalSpent' => 0.0,
+                    ];
+                    $customers[$key]['orders']++;
+                    $customers[$key]['totalSpent'] += (float) $order->total;
+                }
+
+                return array_slice(array_values($customers), 0, $limit);
+            },
+        );
     }
 
     private function productsTool(): array
     {
-        $schema = [
-            'type' => 'object',
-            'properties' => [
-                'query' => [
-                    'type' => 'string',
-                    'description' => 'Free-text search matched against product titles.',
+        return $this->buildTool(
+            'search_products',
+            'Search the real product catalog, including current stock levels. '
+                .'Returns name, price, stock, and category.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text search matched against product titles.',
+                    ],
+                    'lowStockOnly' => [
+                        'type' => 'boolean',
+                        'description' => 'When true, only return products with fewer than 5 in stock (checks the lowest variant stock for variant products).',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 8, max 15.',
+                    ],
                 ],
-                'lowStockOnly' => [
-                    'type' => 'boolean',
-                    'description' => 'When true, only return products with fewer than 5 in stock (checks the lowest variant stock for variant products).',
-                ],
-                'limit' => [
-                    'type' => 'integer',
-                    'description' => 'Max results to return. Default 8, max 15.',
-                ],
+                'required' => [],
             ],
-            'required' => [],
-        ];
-
-        return [
-            'anthropic' => [
-                'name' => 'search_products',
-                'description' => 'Search the real product catalog, including current stock levels. '
-                    .'Returns name, price, stock, and category.',
-                'input_schema' => $schema,
-            ],
-            'openai' => [
-                'type' => 'function',
-                'function' => [
-                    'name' => 'search_products',
-                    'description' => 'Search the real product catalog, including current stock levels. '
-                        .'Returns name, price, stock, and category.',
-                    'parameters' => $schema,
-                ],
-            ],
-            'run' => function (array $input) {
+            function (array $input) {
                 $limit = min((int) ($input['limit'] ?? 8), 15);
 
                 $products = Product::query()
@@ -410,39 +499,262 @@ class AdminChatController extends Controller
 
                 return $products->take($limit)->values()->all();
             },
-        ];
+        );
     }
 
     private function analyticsTool(): array
     {
-        $schema = [
-            'type' => 'object',
-            'properties' => [
-                'periodDays' => [
-                    'type' => 'integer',
-                    'description' => 'How many trailing days to summarize. Default 90.',
+        return $this->buildTool(
+            'get_analytics_summary',
+            'Get aggregated store performance for the trailing N days: total orders, '
+                .'revenue, average order value, orders by status, daily revenue, and top products by revenue.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'periodDays' => [
+                        'type' => 'integer',
+                        'description' => 'How many trailing days to summarize. Default 90.',
+                    ],
                 ],
+                'required' => [],
             ],
-            'required' => [],
-        ];
+            fn (array $input) => $this->analytics->summary(min((int) ($input['periodDays'] ?? 90), 365)),
+        );
+    }
 
-        return [
-            'anthropic' => [
-                'name' => 'get_analytics_summary',
-                'description' => 'Get aggregated store performance for the trailing N days: total orders, '
-                    .'revenue, average order value, orders by status, daily revenue, and top products by revenue.',
-                'input_schema' => $schema,
-            ],
-            'openai' => [
-                'type' => 'function',
-                'function' => [
-                    'name' => 'get_analytics_summary',
-                    'description' => 'Get aggregated store performance for the trailing N days: total orders, '
-                        .'revenue, average order value, orders by status, daily revenue, and top products by revenue.',
-                    'parameters' => $schema,
+    private function discountsTool(): array
+    {
+        return $this->buildTool(
+            'search_discounts',
+            'Search the store\'s discount codes. Returns code, type, value, usage count vs. limit, '
+                .'active status, and expiry.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the discount code.',
+                    ],
+                    'activeOnly' => [
+                        'type' => 'boolean',
+                        'description' => 'When true, only return codes currently marked active.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 8, max 15.',
+                    ],
                 ],
+                'required' => [],
             ],
-            'run' => fn (array $input) => $this->analytics->summary(min((int) ($input['periodDays'] ?? 90), 365)),
-        ];
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 8), 15);
+
+                $discounts = Discount::query()
+                    ->when($input['query'] ?? null, fn ($q, $query) => $q->where('code', 'like', "%{$query}%"))
+                    ->when($input['activeOnly'] ?? false, fn ($q) => $q->where('active', true))
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get();
+
+                return $discounts->map(fn (Discount $d) => [
+                    'code' => $d->code,
+                    'type' => $d->type,
+                    'value' => $d->value !== null ? (float) $d->value : null,
+                    'buyQty' => $d->buy_qty,
+                    'getQty' => $d->get_qty,
+                    'usedCount' => $d->used_count,
+                    'usageLimit' => $d->usage_limit,
+                    'active' => (bool) $d->active,
+                    'endsAt' => $d->ends_at?->format('Y-m-d'),
+                ])->values()->all();
+            },
+        );
+    }
+
+    private function reviewsTool(): array
+    {
+        return $this->buildTool(
+            'search_reviews',
+            'Search product reviews. Returns product name, author, rating, moderation status, '
+                .'and a snippet of the review body.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the product name or reviewer name.',
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                        'enum' => ['pending', 'approved', 'rejected'],
+                        'description' => 'Filter by moderation status. Omit to include every status.',
+                    ],
+                    'maxRating' => [
+                        'type' => 'integer',
+                        'description' => 'Only return reviews at or below this rating (1-5) — useful for finding complaints.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 8, max 15.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 8), 15);
+
+                $reviews = ProductReview::query()
+                    ->with('product')
+                    ->when($input['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+                    ->when($input['maxRating'] ?? null, fn ($q, $rating) => $q->where('rating', '<=', $rating))
+                    ->when($input['query'] ?? null, function ($q, $query) {
+                        $q->where(function ($qq) use ($query) {
+                            $qq->where('author', 'like', "%{$query}%")
+                                ->orWhereHas('product', fn ($qp) => $qp->where('title', 'like', "%{$query}%"));
+                        });
+                    })
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get();
+
+                return $reviews->map(fn (ProductReview $r) => [
+                    'product' => $r->product?->title,
+                    'author' => $r->author,
+                    'rating' => $r->rating,
+                    'status' => $r->status,
+                    'body' => Str::limit($r->body, 200),
+                ])->values()->all();
+            },
+        );
+    }
+
+    private function policiesTool(): array
+    {
+        return $this->buildTool(
+            'search_policies',
+            'List the store\'s CMS policy pages (Privacy Policy, Shipping Policy, etc.). '
+                .'Returns title, slug, and publish status.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the policy title.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            fn (array $input) => Policy::query()
+                ->when($input['query'] ?? null, fn ($q, $query) => $q->where('title', 'like', "%{$query}%"))
+                ->orderBy('title')
+                ->get()
+                ->map(fn (Policy $p) => [
+                    'title' => $p->title,
+                    'slug' => $p->slug,
+                    'status' => $p->status,
+                ])->values()->all(),
+        );
+    }
+
+    private function faqsTool(): array
+    {
+        return $this->buildTool(
+            'search_faqs',
+            'List the store\'s published/draft FAQ entries. Returns the question, answer, and status.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the question.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            fn (array $input) => Faq::query()
+                ->when($input['query'] ?? null, fn ($q, $query) => $q->where('question', 'like', "%{$query}%"))
+                ->orderBy('position')
+                ->get()
+                ->map(fn (Faq $f) => [
+                    'question' => $f->question,
+                    'answer' => $f->answer,
+                    'status' => $f->status,
+                ])->values()->all(),
+        );
+    }
+
+    private function staffTool(): array
+    {
+        return $this->buildTool(
+            'search_staff',
+            'Search dashboard staff/team accounts. Returns name, email, and role only — '
+                .'never passwords or any credential.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against name or email.',
+                    ],
+                    'role' => [
+                        'type' => 'string',
+                        'enum' => ['owner', 'admin', 'staff'],
+                        'description' => 'Filter by role. Omit to include every role.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            fn (array $input) => User::query()
+                ->whereIn('role', ['owner', 'admin', 'staff'])
+                ->when($input['role'] ?? null, fn ($q, $role) => $q->where('role', $role))
+                ->when($input['query'] ?? null, function ($q, $query) {
+                    $q->where(function ($qq) use ($query) {
+                        $qq->where('name', 'like', "%{$query}%")
+                            ->orWhere('email', 'like', "%{$query}%");
+                    });
+                })
+                ->orderBy('name')
+                ->get()
+                ->map(fn (User $u) => [
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'role' => $u->role,
+                ])->values()->all(),
+        );
+    }
+
+    private function subscribersTool(): array
+    {
+        return $this->buildTool(
+            'search_subscribers',
+            'Search the newsletter/marketing email subscriber list. Returns email and signup date.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the email address.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 10, max 25.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 10), 25);
+
+                return Subscriber::query()
+                    ->when($input['query'] ?? null, fn ($q, $query) => $q->where('email', 'like', "%{$query}%"))
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get()
+                    ->map(fn (Subscriber $s) => [
+                        'email' => $s->email,
+                        'subscribedAt' => $s->created_at?->format('Y-m-d'),
+                    ])->values()->all();
+            },
+        );
     }
 }
