@@ -6,6 +6,7 @@ use Anthropic\Client;
 use Anthropic\Core\Exceptions\APIStatusException;
 use App\Models\Product;
 use App\Models\StoreSetting;
+use App\Support\AiErrorMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -32,8 +33,11 @@ class ChatController extends Controller
         ]);
 
         $settings = StoreSetting::current();
-        $useOpenAi = $settings->ai_provider === 'openai';
-        $key = $useOpenAi ? $settings->openai_api_key : $settings->anthropic_api_key;
+        $key = match ($settings->ai_provider) {
+            'openai' => $settings->openai_api_key,
+            'gemini' => $settings->gemini_api_key,
+            default => $settings->anthropic_api_key,
+        };
 
         if (! $key) {
             return response()->json([
@@ -49,9 +53,23 @@ class ChatController extends Controller
             $validated['messages']
         );
 
-        return $useOpenAi
-            ? $this->sendViaOpenAi($settings, $messages)
-            : $this->sendViaAnthropic($settings, $messages);
+        return match ($settings->ai_provider) {
+            'openai' => $this->sendViaOpenAiCompatible(
+                'https://api.openai.com/v1/chat/completions',
+                $settings->openai_api_key,
+                $settings->openai_model ?: 'gpt-4o-mini',
+                'OpenAI',
+                $messages,
+            ),
+            'gemini' => $this->sendViaOpenAiCompatible(
+                'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+                $settings->gemini_api_key,
+                $settings->gemini_model ?: 'gemini-flash-latest',
+                'Gemini',
+                $messages,
+            ),
+            default => $this->sendViaAnthropic($settings, $messages),
+        };
     }
 
     private function sendViaAnthropic(StoreSetting $settings, array $messages): JsonResponse
@@ -129,23 +147,32 @@ class ChatController extends Controller
                 'configured' => true,
                 'reply' => null,
                 'products' => [],
-                'error' => 'Claude API error: '.$e->getMessage(),
+                'error' => AiErrorMessage::forStatus($e->status ?? 500, 'Anthropic'),
             ]);
         } catch (Throwable $e) {
             return response()->json([
                 'configured' => true,
                 'reply' => null,
                 'products' => [],
-                'error' => 'Could not reach the Claude API: '.$e->getMessage(),
+                'error' => AiErrorMessage::forConnectionFailure('Anthropic'),
             ]);
         }
     }
 
-    private function sendViaOpenAi(StoreSetting $settings, array $messages): JsonResponse
-    {
-        // OpenAI's message shape rather than Anthropic's: role/content
-        // strings plus an assistant `tool_calls` array and `role: 'tool'`
-        // responses, instead of content blocks.
+    /**
+     * Shared by OpenAI and Gemini — Gemini exposes an OpenAI-compatible
+     * endpoint (`/v1beta/openai/...`) that accepts the exact same
+     * request/response shape (role/content strings, assistant `tool_calls`,
+     * `role: 'tool'` responses), so there's no need for a second
+     * hand-rolled client against Gemini's differently-shaped native API.
+     */
+    private function sendViaOpenAiCompatible(
+        string $baseUrl,
+        ?string $apiKey,
+        string $model,
+        string $providerLabel,
+        array $messages,
+    ): JsonResponse {
         $openAiMessages = [
             ['role' => 'system', 'content' => $this->systemPrompt()],
             ...array_map(
@@ -159,10 +186,10 @@ class ChatController extends Controller
             $reply = '';
 
             for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
-                $response = Http::withToken($settings->openai_api_key)
+                $response = Http::withToken($apiKey)
                     ->timeout(30)
-                    ->post('https://api.openai.com/v1/chat/completions', [
-                        'model' => $settings->openai_model ?: 'gpt-4o-mini',
+                    ->post($baseUrl, [
+                        'model' => $model,
                         'max_tokens' => 1024,
                         'messages' => $openAiMessages,
                         'tools' => [$this->searchProductsToolDefinitionOpenAi()],
@@ -173,7 +200,7 @@ class ChatController extends Controller
                         'configured' => true,
                         'reply' => null,
                         'products' => [],
-                        'error' => 'OpenAI API error: '.($response->json('error.message') ?? $response->body()),
+                        'error' => AiErrorMessage::forStatus($response->status(), $providerLabel),
                     ]);
                 }
 
@@ -229,7 +256,7 @@ class ChatController extends Controller
                 'configured' => true,
                 'reply' => null,
                 'products' => [],
-                'error' => 'Could not reach the OpenAI API: '.$e->getMessage(),
+                'error' => AiErrorMessage::forConnectionFailure($providerLabel),
             ]);
         }
     }

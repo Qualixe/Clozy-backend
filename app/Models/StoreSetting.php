@@ -57,6 +57,8 @@ class StoreSetting extends Model
         'ai_provider',
         'openai_api_key',
         'openai_model',
+        'gemini_api_key',
+        'gemini_model',
         'logo_url',
         'favicon_url',
         'email_logo_url',

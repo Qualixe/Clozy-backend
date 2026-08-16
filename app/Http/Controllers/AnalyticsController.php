@@ -6,6 +6,7 @@ use Anthropic\Client;
 use Anthropic\Core\Exceptions\APIStatusException;
 use App\Models\StoreSetting;
 use App\Services\StoreAnalyticsService;
+use App\Support\AiErrorMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -32,8 +33,11 @@ class AnalyticsController extends Controller
     public function aiInsights(): JsonResponse
     {
         $settings = StoreSetting::current();
-        $useOpenAi = $settings->ai_provider === 'openai';
-        $key = $useOpenAi ? $settings->openai_api_key : $settings->anthropic_api_key;
+        $key = match ($settings->ai_provider) {
+            'openai' => $settings->openai_api_key,
+            'gemini' => $settings->gemini_api_key,
+            default => $settings->anthropic_api_key,
+        };
 
         if (! $key) {
             return response()->json([
@@ -45,9 +49,23 @@ class AnalyticsController extends Controller
 
         $stats = $this->analytics->summary(90);
 
-        return $useOpenAi
-            ? $this->openAiInsight($settings, $stats)
-            : $this->anthropicInsight($settings, $stats);
+        return match ($settings->ai_provider) {
+            'openai' => $this->openAiCompatibleInsight(
+                'https://api.openai.com/v1/chat/completions',
+                $settings->openai_api_key,
+                $settings->openai_model ?: 'gpt-4o-mini',
+                'OpenAI',
+                $stats,
+            ),
+            'gemini' => $this->openAiCompatibleInsight(
+                'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+                $settings->gemini_api_key,
+                $settings->gemini_model ?: 'gemini-flash-latest',
+                'Gemini',
+                $stats,
+            ),
+            default => $this->anthropicInsight($settings, $stats),
+        };
     }
 
     private function anthropicInsight(StoreSetting $settings, array $stats): JsonResponse
@@ -89,24 +107,35 @@ class AnalyticsController extends Controller
             return response()->json([
                 'configured' => true,
                 'insight' => null,
-                'error' => 'Claude API error: '.$e->getMessage(),
+                'error' => AiErrorMessage::forStatus($e->status ?? 500, 'Anthropic'),
             ]);
         } catch (Throwable $e) {
             return response()->json([
                 'configured' => true,
                 'insight' => null,
-                'error' => 'Could not reach the Claude API: '.$e->getMessage(),
+                'error' => AiErrorMessage::forConnectionFailure('Anthropic'),
             ]);
         }
     }
 
-    private function openAiInsight(StoreSetting $settings, array $stats): JsonResponse
-    {
+    /**
+     * Shared by OpenAI and Gemini — Gemini exposes an OpenAI-compatible
+     * endpoint (`/v1beta/openai/...`) that accepts the exact same request
+     * shape, so there's no need for a second hand-rolled client against
+     * Gemini's native (differently-shaped) generateContent API.
+     */
+    private function openAiCompatibleInsight(
+        string $baseUrl,
+        ?string $apiKey,
+        string $model,
+        string $providerLabel,
+        array $stats,
+    ): JsonResponse {
         try {
-            $response = Http::withToken($settings->openai_api_key)
+            $response = Http::withToken($apiKey)
                 ->timeout(30)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => $settings->openai_model ?: 'gpt-4o-mini',
+                ->post($baseUrl, [
+                    'model' => $model,
                     'max_tokens' => 1024,
                     'messages' => [
                         ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
@@ -118,7 +147,7 @@ class AnalyticsController extends Controller
                 return response()->json([
                     'configured' => true,
                     'insight' => null,
-                    'error' => 'OpenAI API error: '.($response->json('error.message') ?? $response->body()),
+                    'error' => AiErrorMessage::forStatus($response->status(), $providerLabel),
                 ]);
             }
 
@@ -128,7 +157,7 @@ class AnalyticsController extends Controller
                 return response()->json([
                     'configured' => true,
                     'insight' => null,
-                    'error' => 'OpenAI declined to generate a summary for this data.',
+                    'error' => "{$providerLabel} declined to generate a summary for this data.",
                 ]);
             }
 
@@ -141,7 +170,7 @@ class AnalyticsController extends Controller
             return response()->json([
                 'configured' => true,
                 'insight' => null,
-                'error' => 'Could not reach the OpenAI API: '.$e->getMessage(),
+                'error' => AiErrorMessage::forConnectionFailure($providerLabel),
             ]);
         }
     }
