@@ -253,18 +253,56 @@ class AdminChatController extends Controller
 
     private function systemPrompt(): string
     {
-        return 'You are a store-operations copilot for Clozy admins, inside their dashboard. Answer questions '
-            .'about orders, customers, products, discounts, reviews, CMS content (policies/FAQs), navigation menus, '
-            .'categories, the media library, SMS logs, staff accounts, subscribers, and store performance using '
-            .'the tools available to you — never invent a number, order, product, menu item, or any other fact '
-            .'that a tool didn\'t return. If a tool returns nothing matching, say so '
-            .'plainly rather than guessing. The specific tools you have access to depend on the asking admin\'s '
-            .'own dashboard permissions, so if you don\'t have a tool for what\'s asked, say that plainly (e.g. '
-            .'"I don\'t have access to staff accounts") rather than trying to answer from general knowledge or a '
-            .'different tool. Never reveal or guess at credentials, API keys, passwords, or payment gateway '
-            .'secrets — you have no tool that returns those, and none of the tools you\'ll ever be given will. '
-            .'Amounts are in BDT (Bangladeshi Taka), shown with a "৳" prefix — use that symbol when quoting '
-            .'figures. Keep replies concise and direct; use short bullet points for lists.';
+        return 'You are a store-operations copilot for Clozy admins, inside their dashboard. You can do two '
+            .'different things: (1) answer questions about real store data — orders, customers, products, '
+            .'discounts, reviews (including aggregate counts/ratings via get_review_stats), CMS content '
+            .'(policies/FAQs), navigation menus, categories, the media library, SMS logs, staff accounts, '
+            .'subscribers, and store performance — using the tools available to you, never inventing a number, '
+            .'order, product, menu item, or any other fact a tool didn\'t return; and (2) answer "how do I..." '
+            .'questions about using the dashboard itself, using the navigation guide below — for these you don\'t '
+            .'need a tool, just tell them exactly where to click. If a tool returns nothing matching a data '
+            .'question, say so plainly rather than guessing. The specific data tools you have access to depend on '
+            .'the asking admin\'s own dashboard permissions, so if you don\'t have a tool for a data question, say '
+            .'that plainly (e.g. "I don\'t have access to staff accounts") rather than trying to answer from '
+            .'general knowledge or a different tool — this restriction does NOT apply to navigation/how-to '
+            .'questions, which you can always answer from the guide below regardless of permissions (the admin '
+            .'will hit a permission wall in the UI itself if they try and lack access). Never reveal or guess at '
+            .'credentials, API keys, passwords, or payment gateway secrets — you have no tool that returns those, '
+            .'and none of the tools you\'ll ever be given will. Amounts are in BDT (Bangladeshi Taka), shown with '
+            .'a "৳" prefix — use that symbol when quoting figures. Keep replies concise and direct; use short '
+            .'bullet points for lists.'
+            ."\n\n".$this->dashboardNavigationGuide();
+    }
+
+    /**
+     * Static "how do I..." reference — kept in sync with lib/sidebar-items.ts
+     * on the frontend (the single source of truth for actual dashboard
+     * routes/permissions). Not a tool: the model just quotes from this
+     * directly, since it's the same for every conversation.
+     */
+    private function dashboardNavigationGuide(): string
+    {
+        return "Dashboard navigation guide (paths are relative to the dashboard, e.g. \"Products\" = Dashboard > Products):\n"
+            ."- Products: Dashboard > Products — add/edit products, prices, stock, images, variants (color/size).\n"
+            ."- Categories: Dashboard > Products > Categories — add/edit/reorder categories.\n"
+            ."- Orders: Dashboard > Orders — view orders, update status, ship via courier, print/download an invoice.\n"
+            ."- Discounts: Dashboard > Discounts — create/edit promo codes (percentage, fixed, free shipping, buy-X-get-Y).\n"
+            ."- Reviews: Dashboard > Reviews — approve, reject, or reply to customer reviews.\n"
+            ."- Customers: Dashboard > Customers — read-only list derived from order history.\n"
+            ."- Analytics: Dashboard > Analytics — sales charts and the \"Generate AI Insights\" button.\n"
+            ."- Menus: Dashboard > Content > Menus — click a menu (e.g. \"Main Menu\") to add, remove, reorder, or "
+            ."edit its items and sub-items, then click Save. New menus can be created from that same page.\n"
+            ."- Media: Dashboard > Content > Media — upload, search, and delete images used across the store.\n"
+            ."- Home page sections: Dashboard > CMS > Home — edit the hero slides, New Arrivals picks, promo "
+            ."banner, video section, and category grid banners shown on the storefront homepage.\n"
+            ."- About page: Dashboard > CMS > About Page.\n"
+            ."- Policies: Dashboard > CMS > Policies — create/edit pages like Privacy Policy or Shipping Policy.\n"
+            ."- FAQs: Dashboard > CMS > FAQs.\n"
+            ."- SMS: Dashboard > SMS > Logs (view delivery history) or Dashboard > SMS > Promotional (send a campaign).\n"
+            ."- Staff accounts: Dashboard > Users — invite staff, set their role, and grant specific permissions.\n"
+            ."- Subscribers: Dashboard > Subscribers — the newsletter/marketing email list.\n"
+            ."- Store settings: Dashboard > Settings — tabs for General, Branding, Shipping, Payment (COD/bKash), "
+            ."Pixels (analytics), SMS gateway, Email, and AI (this copilot's own provider/API key).";
     }
 
     /**
@@ -301,6 +339,7 @@ class AdminChatController extends Controller
         }
         if ($user->can('view_reviews')) {
             $tools['search_reviews'] = $this->reviewsTool();
+            $tools['get_review_stats'] = $this->reviewStatsTool();
         }
         if ($user->can('view_cms_pages')) {
             $tools['search_policies'] = $this->policiesTool();
@@ -642,6 +681,53 @@ class AdminChatController extends Controller
                     'status' => $r->status,
                     'body' => Str::limit($r->body, 200),
                 ])->values()->all();
+            },
+        );
+    }
+
+    private function reviewStatsTool(): array
+    {
+        return $this->buildTool(
+            'get_review_stats',
+            'Get aggregate review counts and ratings — total review count, average rating, how many are '
+                .'pending/approved/rejected, the 1-5 star breakdown, and (optionally) the same numbers for '
+                .'one specific product. Use this for any "how many reviews"/"what\'s our average rating" '
+                .'question instead of counting search_reviews results by hand.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'productQuery' => [
+                        'type' => 'string',
+                        'description' => 'Limit the stats to one product, matched by name. Omit for store-wide stats.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $reviews = ProductReview::query()
+                    ->when($input['productQuery'] ?? null, function ($q, $query) {
+                        $q->whereHas('product', fn ($qp) => $qp->where('title', 'like', "%{$query}%"));
+                    })
+                    ->get();
+
+                $byStatus = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
+                $byRating = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
+
+                foreach ($reviews as $review) {
+                    if (isset($byStatus[$review->status])) {
+                        $byStatus[$review->status]++;
+                    }
+                    if (isset($byRating[$review->rating])) {
+                        $byRating[$review->rating]++;
+                    }
+                }
+
+                return [
+                    'totalCount' => $reviews->count(),
+                    'averageRating' => $reviews->count() > 0 ? round($reviews->avg('rating'), 2) : null,
+                    'byStatus' => $byStatus,
+                    'byRating' => $byRating,
+                ];
             },
         );
     }
