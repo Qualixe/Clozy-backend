@@ -73,7 +73,7 @@ class PathaoService
             throw new RuntimeException('No Pathao store selected. Pick one in Settings > Shipping.');
         }
 
-        $response = $this->client()->post($this->url('/aladdin/api/v1/orders'), [
+        $payload = [
             'store_id' => (int) $settings->pathao_store_id,
             'merchant_order_id' => $order->order_number,
             'recipient_name' => $order->customer_name,
@@ -88,7 +88,12 @@ class PathaoService
             'item_weight' => 0.5,
             'amount_to_collect' => $order->codAmountDue(),
             'item_description' => 'Clozy order #'.$order->order_number,
-        ]);
+        ];
+
+        $response = $this->withRetryOn401(
+            fn (string $token) => Http::withToken($token)->acceptJson()->timeout(15)
+                ->post($this->url('/aladdin/api/v1/orders'), $payload)
+        );
 
         $body = $response->json();
 
@@ -111,7 +116,9 @@ class PathaoService
 
     private function get(string $path): array
     {
-        $response = $this->client()->get($this->url($path));
+        $response = $this->withRetryOn401(
+            fn (string $token) => Http::withToken($token)->acceptJson()->timeout(15)->get($this->url($path))
+        );
 
         if (! $response->successful()) {
             throw new RuntimeException($response->json('message') ?? 'Could not reach Pathao.');
@@ -120,9 +127,23 @@ class PathaoService
         return $response->json();
     }
 
-    private function client()
+    /**
+     * Runs a request with the cached token; if Pathao rejects it with 401
+     * (revoked early, or a still-cached token from before a credentials
+     * change slipped through), forces a fresh token and retries exactly
+     * once — without this, every call would keep failing until the
+     * locally-cached expiry naturally passes, which is a poor first
+     * impression for real production credentials.
+     */
+    private function withRetryOn401(callable $makeRequest): \Illuminate\Http\Client\Response
     {
-        return Http::withToken($this->getAccessToken())->acceptJson()->timeout(15);
+        $response = $makeRequest($this->getAccessToken());
+
+        if ($response->status() === 401) {
+            $response = $makeRequest($this->getAccessToken(forceRefresh: true));
+        }
+
+        return $response;
     }
 
     private function url(string $path): string
@@ -132,7 +153,7 @@ class PathaoService
         return rtrim((string) $settings->pathao_base_url, '/').$path;
     }
 
-    private function getAccessToken(): string
+    private function getAccessToken(bool $forceRefresh = false): string
     {
         $settings = StoreSetting::current();
 
@@ -140,7 +161,7 @@ class PathaoService
             throw new RuntimeException('Pathao is not configured. Add your credentials in Settings > Shipping.');
         }
 
-        if ($settings->pathao_access_token && $settings->pathao_token_expires_at?->isFuture()) {
+        if (! $forceRefresh && $settings->pathao_access_token && $settings->pathao_token_expires_at?->isFuture()) {
             return $settings->pathao_access_token;
         }
 
