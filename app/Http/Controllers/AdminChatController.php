@@ -4,12 +4,17 @@ namespace App\Http\Controllers;
 
 use Anthropic\Client;
 use Anthropic\Core\Exceptions\APIStatusException;
+use App\Models\Category;
 use App\Models\Discount;
 use App\Models\Faq;
+use App\Models\Media;
+use App\Models\Menu;
+use App\Models\MenuItem;
 use App\Models\Order;
 use App\Models\Policy;
 use App\Models\Product;
 use App\Models\ProductReview;
+use App\Models\SmsLog;
 use App\Models\StoreSetting;
 use App\Models\Subscriber;
 use App\Models\User;
@@ -64,7 +69,7 @@ class AdminChatController extends Controller
         if (empty($tools)) {
             return response()->json([
                 'configured' => true,
-                'reply' => "You don't have permission to view any of the store data I can help with — ask an admin to grant you at least one of: View Orders, View Products, View Analytics, View Discounts, View Reviews, View CMS Pages, View Staff, or Manage Settings.",
+                'reply' => "You don't have permission to view any of the store data I can help with — ask an admin to grant you at least one of: View Orders, View Products, View Analytics, View Discounts, View Reviews, View CMS Pages, View Staff, Manage Settings, View Menus, View Categories, View Media, or View SMS.",
                 'error' => null,
             ]);
         }
@@ -249,9 +254,10 @@ class AdminChatController extends Controller
     private function systemPrompt(): string
     {
         return 'You are a store-operations copilot for Clozy admins, inside their dashboard. Answer questions '
-            .'about orders, customers, products, discounts, reviews, CMS content (policies/FAQs), staff accounts, '
-            .'subscribers, and store performance using the tools available to you — never invent a number, order, '
-            .'product, or any other fact that a tool didn\'t return. If a tool returns nothing matching, say so '
+            .'about orders, customers, products, discounts, reviews, CMS content (policies/FAQs), navigation menus, '
+            .'categories, the media library, SMS logs, staff accounts, subscribers, and store performance using '
+            .'the tools available to you — never invent a number, order, product, menu item, or any other fact '
+            .'that a tool didn\'t return. If a tool returns nothing matching, say so '
             .'plainly rather than guessing. The specific tools you have access to depend on the asking admin\'s '
             .'own dashboard permissions, so if you don\'t have a tool for what\'s asked, say that plainly (e.g. '
             .'"I don\'t have access to staff accounts") rather than trying to answer from general knowledge or a '
@@ -305,6 +311,18 @@ class AdminChatController extends Controller
         }
         if ($user->can('manage_settings')) {
             $tools['search_subscribers'] = $this->subscribersTool();
+        }
+        if ($user->can('view_menus')) {
+            $tools['search_menus'] = $this->menusTool();
+        }
+        if ($user->can('view_categories')) {
+            $tools['search_categories'] = $this->categoriesTool();
+        }
+        if ($user->can('view_media')) {
+            $tools['search_media'] = $this->mediaTool();
+        }
+        if ($user->can('view_sms')) {
+            $tools['search_sms_logs'] = $this->smsLogsTool();
         }
 
         return $tools;
@@ -753,6 +771,169 @@ class AdminChatController extends Controller
                     ->map(fn (Subscriber $s) => [
                         'email' => $s->email,
                         'subscribedAt' => $s->created_at?->format('Y-m-d'),
+                    ])->values()->all();
+            },
+        );
+    }
+
+    private function menusTool(): array
+    {
+        return $this->buildTool(
+            'search_menus',
+            'List the store\'s navigation menus (e.g. "Main Menu", "Footer Menu") and their items — '
+                .'label, URL, and nested sub-items (megamenu columns/links), up to 3 levels deep.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the menu\'s name or handle. Omit to list every menu.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            fn (array $input) => Menu::query()
+                ->with('items.children.children')
+                ->when($input['query'] ?? null, function ($q, $query) {
+                    $q->where(function ($qq) use ($query) {
+                        $qq->where('name', 'like', "%{$query}%")
+                            ->orWhere('handle', 'like', "%{$query}%");
+                    });
+                })
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Menu $m) => [
+                    'name' => $m->name,
+                    'handle' => $m->handle,
+                    'items' => $m->items->map(fn (MenuItem $item) => $this->flattenMenuItem($item))->values()->all(),
+                ])->values()->all(),
+        );
+    }
+
+    /** @return array{label: string, url: string, children: array} */
+    private function flattenMenuItem(MenuItem $item): array
+    {
+        return [
+            'label' => $item->label,
+            'url' => $item->url,
+            'children' => $item->children->map(fn (MenuItem $child) => $this->flattenMenuItem($child))->values()->all(),
+        ];
+    }
+
+    private function categoriesTool(): array
+    {
+        return $this->buildTool(
+            'search_categories',
+            'Search the store\'s product categories/collections. Returns name, slug, position, and how '
+                .'many products are primarily assigned to it.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the category name.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 15, max 30.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 15), 30);
+
+                return Category::query()
+                    ->withCount('products')
+                    ->when($input['query'] ?? null, fn ($q, $query) => $q->where('name', 'like', "%{$query}%"))
+                    ->orderBy('position')
+                    ->limit($limit)
+                    ->get()
+                    ->map(fn (Category $c) => [
+                        'name' => $c->name,
+                        'slug' => $c->slug,
+                        'productCount' => $c->products_count,
+                    ])->values()->all();
+            },
+        );
+    }
+
+    private function mediaTool(): array
+    {
+        return $this->buildTool(
+            'search_media',
+            'Search the uploaded media library (images used across products, CMS, and theme sections). '
+                .'Returns filename, size, and MIME type.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'query' => [
+                        'type' => 'string',
+                        'description' => 'Free-text match against the filename.',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 10, max 25.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 10), 25);
+
+                return Media::query()
+                    ->when($input['query'] ?? null, fn ($q, $query) => $q->where('filename', 'like', "%{$query}%"))
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get()
+                    ->map(fn (Media $m) => [
+                        'filename' => $m->filename,
+                        'mimeType' => $m->mime_type,
+                        'sizeKb' => $m->size ? round($m->size / 1024, 1) : null,
+                    ])->values()->all();
+            },
+        );
+    }
+
+    private function smsLogsTool(): array
+    {
+        return $this->buildTool(
+            'search_sms_logs',
+            'Search the SMS notification log (order confirmations, cancellations, promotional sends). '
+                .'Returns recipient, type, delivery status, and a snippet of the message.',
+            [
+                'type' => 'object',
+                'properties' => [
+                    'status' => [
+                        'type' => 'string',
+                        'description' => 'Filter by delivery status (e.g. "sent", "failed") — exact values depend on the SMS gateway.',
+                    ],
+                    'type' => [
+                        'type' => 'string',
+                        'description' => 'Filter by message type, e.g. "order_confirmation", "order_cancelled", "promotional".',
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Max results to return. Default 10, max 25.',
+                    ],
+                ],
+                'required' => [],
+            ],
+            function (array $input) {
+                $limit = min((int) ($input['limit'] ?? 10), 25);
+
+                return SmsLog::query()
+                    ->when($input['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+                    ->when($input['type'] ?? null, fn ($q, $type) => $q->where('type', $type))
+                    ->orderByDesc('created_at')
+                    ->limit($limit)
+                    ->get()
+                    ->map(fn (SmsLog $s) => [
+                        'recipient' => $s->recipient,
+                        'type' => $s->type,
+                        'status' => $s->status,
+                        'message' => Str::limit($s->message, 160),
+                        'sentAt' => $s->created_at?->format('Y-m-d H:i'),
                     ])->values()->all();
             },
         );
